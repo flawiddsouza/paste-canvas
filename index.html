@@ -82,6 +82,7 @@
         linear-gradient(#222 1px, transparent 1px),
         linear-gradient(90deg, #222 1px, transparent 1px);
       background-size: 40px 40px;
+      background-position: 0 0;
     }
 
     /* ── Items ── */
@@ -306,6 +307,7 @@
   <div class="sep"></div>
   <button class="btn" id="btn-reset-view">Reset View</button>
   <span id="zoom-label">100%</span>
+  <span id="coords-label" style="font-size:11px;color:#555;min-width:80px">0, 0</span>
   <div class="sep"></div>
   <small style="color:#666;font-size:11px">Ctrl+V paste · Scroll zoom · Drag canvas to pan</small>
 </div>
@@ -325,6 +327,7 @@
 const surface = document.getElementById('canvas-surface');
 const viewport = document.getElementById('viewport');
 const zoomLabel = document.getElementById('zoom-label');
+const coordsLabel = document.getElementById('coords-label');
 
 let scale = 1;
 let panX = 0, panY = 0;
@@ -340,6 +343,10 @@ let placeOffset = 0;
 function applyTransform() {
   surface.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
   zoomLabel.textContent = Math.round(scale * 100) + '%';
+  const gs = 40 * scale;
+  viewport.style.backgroundSize = `${gs}px ${gs}px`;
+  viewport.style.backgroundPosition = `${panX % gs}px ${panY % gs}px`;
+  coordsLabel.textContent = `${Math.round(-panX / scale)}, ${Math.round(-panY / scale)}`;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
