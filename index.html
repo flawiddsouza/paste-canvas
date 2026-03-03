@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paste Canvas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #252525;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #toolbar h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #aaa;
+      margin-right: 8px;
+    }
+
+    .btn {
+      padding: 5px 12px;
+      border: 1px solid #444;
+      border-radius: 5px;
+      background: #333;
+      color: #ddd;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .btn:hover { background: #444; border-color: #666; }
+    .btn.active { background: #2d6be0; border-color: #4a88f0; color: #fff; }
+
+    .sep { width: 1px; height: 24px; background: #444; }
+
+    #zoom-label {
+      font-size: 12px;
+      color: #888;
+      min-width: 42px;
+      text-align: right;
+    }
+
+    /* ── Viewport ── */
+    #viewport {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      cursor: default;
+    }
+
+    /* The infinite canvas surface */
+    #canvas-surface {
+      position: absolute;
+      top: 0; left: 0;
+      width: 0; height: 0;
+      transform-origin: 0 0;
+    }
+
+    /* Grid background drawn on the viewport itself */
+    #viewport {
+      background-color: #111;
+      background-image:
+        linear-gradient(#222 1px, transparent 1px),
+        linear-gradient(90deg, #222 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ── Items ── */
+    .item {
+      position: absolute;
+      cursor: grab;
+      user-select: none;
+    }
+    .item-img:active { cursor: grabbing; }
+    .item.selected .item-inner {
+      outline: 2px solid #2d6be0;
+      outline-offset: 2px;
+    }
+
+    .item-inner {
+      position: relative;
+      border-radius: 4px;
+      background: #2a2a2a;
+      box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    }
+
+    /* Image items */
+    .item-img .item-inner {
+      position: relative;
+    }
+    .item-img .item-inner img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      pointer-events: none;
+      min-width: 80px;
+    }
+
+    .img-label {
+      display: block;
+      width: 100%;
+      background: rgba(0,0,0,0.65);
+      color: #eee;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 5px 10px;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      border-radius: 0 0 4px 4px;
+      overflow: hidden;
+      cursor: text;
+      min-height: 30px;
+    }
+    .img-label:placeholder-shown:not(:focus) {
+      height: 0;
+      min-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    /* Text / note items */
+    .item-note .item-inner {
+      background: #2b2b1e;
+      border: 1px solid #554;
+      min-width: 180px;
+      min-height: 60px;
+    }
+
+    .note-handle {
+      height: 22px;
+      background: #3a3a28;
+      border-bottom: 1px solid #554;
+      border-radius: 4px 4px 0 0;
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #776;
+      font-size: 13px;
+      letter-spacing: 3px;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .note-handle:active { cursor: grabbing; }
+
+    .item-note textarea {
+      display: block;
+      width: 100%;
+      min-width: 180px;
+      min-height: 60px;
+      resize: none;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #f0e68c;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      font-family: inherit;
+      cursor: text;
+      overflow: auto;
+    }
+
+    /* Item toolbar (appears on hover / select) */
+    .item-toolbar {
+      position: absolute;
+      top: -30px;
+      left: 0;
+      display: none;
+      gap: 4px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 5px;
+      padding: 3px 5px;
+      z-index: 10;
+      white-space: nowrap;
+    }
+    .item.toolbar-active .item-toolbar,
+    .item.selected .item-toolbar {
+      display: flex;
+    }
+
+    .item-btn {
+      padding: 2px 8px;
+      border: none;
+      border-radius: 3px;
+      background: #444;
+      color: #ddd;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .item-btn:hover { background: #2d6be0; color: #fff; }
+    .item-btn.danger:hover { background: #c0392b; }
+
+    /* Resize handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 18px; height: 18px;
+      cursor: se-resize;
+      background: linear-gradient(135deg, transparent 50%, #777 50%);
+      border-radius: 0 0 4px 0;
+      z-index: 2;
+      touch-action: none;
+    }
+    .resize-handle:hover {
+      background: linear-gradient(135deg, transparent 50%, #2d6be0 50%);
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: #2d6be0;
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      pointer-events: none;
+      transition: transform .25s ease, opacity .25s ease;
+      opacity: 0;
+      z-index: 1000;
+    }
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>Paste Canvas</h1>
+  <button class="btn" id="btn-note">+ Note</button>
+  <button class="btn" id="btn-paste-img">Paste Image</button>
+  <div class="sep"></div>
+  <button class="btn" id="btn-clear-sel">Deselect</button>
+  <button class="btn" id="btn-delete-sel">Delete Selected</button>
+  <div class="sep"></div>
+  <button class="btn" id="btn-reset-view">Reset View</button>
+  <span id="zoom-label">100%</span>
+  <div class="sep"></div>
+  <small style="color:#666;font-size:11px">Ctrl+V paste · Scroll zoom · Drag canvas to pan</small>
+</div>
+
+<div id="viewport">
+  <div id="canvas-surface"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const surface = document.getElementById('canvas-surface');
+const viewport = document.getElementById('viewport');
+const zoomLabel = document.getElementById('zoom-label');
+
+let scale = 1;
+let panX = 0, panY = 0;
+let items = [];          // {el, type, x, y}
+let selectedItem = null;
+let itemCounter = 0;
+
+// ── Transform ──────────────────────────────────────────────────────────────
+function applyTransform() {
+  surface.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  zoomLabel.textContent = Math.round(scale * 100) + '%';
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg, ms = 2000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function viewportCenter() {
+  const r = viewport.getBoundingClientRect();
+  return {
+    x: (r.width  / 2 - panX) / scale,
+    y: (r.height / 2 - panY) / scale,
+  };
+}
+
+function selectItem(item) {
+  if (selectedItem) selectedItem.el.classList.remove('selected');
+  selectedItem = item;
+  if (item) {
+    item.el.classList.add('selected');
+    item.el.style.zIndex = ++itemCounter;
+  }
+}
+
+// ── Create item ────────────────────────────────────────────────────────────
+function createItem(type, x, y, opts = {}) {
+  const id = ++itemCounter;
+  const el = document.createElement('div');
+  el.className = `item item-${type}`;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  el.style.zIndex = id;
+
+  // Inner wrapper
+  const inner = document.createElement('div');
+  inner.className = 'item-inner';
+
+  // Item-specific content
+  let contentEl;
+  let labelEl = null;
+  if (type === 'img') {
+    contentEl = document.createElement('img');
+    inner.appendChild(contentEl);
+
+    labelEl = document.createElement('textarea');
+    labelEl.className = 'img-label';
+    labelEl.placeholder = 'Label…';
+    labelEl.rows = 1;
+    inner.appendChild(labelEl);
+
+
+    const rh = document.createElement('div');
+    rh.className = 'resize-handle';
+    inner.appendChild(rh);
+
+    rh.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      rh.setPointerCapture(e.pointerId);
+
+      const startX = e.clientX;
+      const startW = inner.offsetWidth;
+
+      const onMove = (ev) => {
+        const dw = (ev.clientX - startX) / scale;
+        inner.style.width = Math.max(80, startW + dw) + 'px';
+      };
+      const onUp = () => {
+        saveItem(record);
+        rh.removeEventListener('pointermove',   onMove);
+        rh.removeEventListener('pointerup',     onUp);
+        rh.removeEventListener('pointercancel', onUp);
+      };
+      rh.addEventListener('pointermove',   onMove);
+      rh.addEventListener('pointerup',     onUp);
+      rh.addEventListener('pointercancel', onUp);
+    });
+  } else {
+    const handle = document.createElement('div');
+    handle.className = 'note-handle';
+    handle.textContent = '⠿⠿⠿';
+    inner.appendChild(handle);
+    contentEl = document.createElement('textarea');
+    contentEl.placeholder = 'Type a note…';
+    contentEl.rows = 3;
+    inner.appendChild(contentEl);
+    // Resize handle
+    const rh = document.createElement('div');
+    rh.className = 'resize-handle';
+    inner.appendChild(rh);
+
+    rh.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      rh.setPointerCapture(e.pointerId);
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startW = contentEl.offsetWidth;
+      const startH = contentEl.offsetHeight;
+
+      const onMove = (ev) => {
+        const dw = (ev.clientX - startX) / scale;
+        const dh = (ev.clientY - startY) / scale;
+        contentEl.style.width  = Math.max(180, startW + dw) + 'px';
+        contentEl.style.height = Math.max(60,  startH + dh) + 'px';
+      };
+      const onUp = () => {
+        saveItem(record);
+        rh.removeEventListener('pointermove',   onMove);
+        rh.removeEventListener('pointerup',     onUp);
+        rh.removeEventListener('pointercancel', onUp);
+      };
+      rh.addEventListener('pointermove',   onMove);
+      rh.addEventListener('pointerup',     onUp);
+      rh.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  // Per-item toolbar
+  const itb = document.createElement('div');
+  itb.className = 'item-toolbar';
+  itb.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+
+  if (type === 'img') {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'item-btn';
+    copyBtn.textContent = 'Copy Image';
+    copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyImage(contentEl); });
+    itb.appendChild(copyBtn);
+
+    const labelBtn = document.createElement('button');
+    labelBtn.className = 'item-btn';
+    labelBtn.textContent = 'Label';
+    labelBtn.addEventListener('click', (e) => { e.stopPropagation(); labelEl.focus(); });
+    itb.appendChild(labelBtn);
+  } else {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'item-btn';
+    copyBtn.textContent = 'Copy Text';
+    copyBtn.addEventListener('click', (e) => { e.stopPropagation(); copyText(contentEl); });
+    itb.appendChild(copyBtn);
+  }
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'item-btn danger';
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', (e) => { e.stopPropagation(); removeItem(record); });
+  itb.appendChild(delBtn);
+
+  el.appendChild(itb);
+  el.appendChild(inner);
+  surface.appendChild(el);
+
+  const record = { id, el, type, x, y, contentEl, labelEl };
+  items.push(record);
+
+  makeDraggable(record);
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target === contentEl || e.target.classList.contains('item-btn')) return;
+    selectItem(record);
+  });
+  el.addEventListener('click', () => selectItem(record));
+
+  if (type === 'note') {
+    let noteTimer = null;
+    contentEl.addEventListener('input', () => {
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => saveItem(record), 600);
+    });
+  }
+  if (type === 'img' && labelEl) {
+    function autoGrowLabel() {
+      if (!labelEl.value) {
+        labelEl.style.height = '';
+      } else {
+        labelEl.style.height = 'auto';
+        labelEl.style.height = labelEl.scrollHeight + 'px';
+      }
+    }
+    let labelTimer = null;
+    labelEl.addEventListener('input', () => {
+      autoGrowLabel();
+      clearTimeout(labelTimer);
+      labelTimer = setTimeout(() => saveItem(record), 600);
+    });
+    record._autoGrowLabel = autoGrowLabel;
+  }
+  if (!opts.restore) {
+    selectItem(record);
+    if (type === 'note') contentEl.focus();
+  }
+  return record;
+}
+
+// ── IndexedDB persistence ───────────────────────────────────────────────────
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('paste-canvas', 1);
+    req.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('meta'))  d.createObjectStore('meta',  { keyPath: 'key' });
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror   = (e) => reject(e.target.error);
+  });
+}
+
+function dbPut(store, value) {
+  if (!db) return;
+  db.transaction(store, 'readwrite').objectStore(store).put(value);
+}
+
+function dbDelete(store, key) {
+  if (!db) return;
+  db.transaction(store, 'readwrite').objectStore(store).delete(key);
+}
+
+function dbGetAll(store) {
+  return new Promise((resolve) => {
+    if (!db) return resolve([]);
+    const req = db.transaction(store).objectStore(store).getAll();
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror   = () => resolve([]);
+  });
+}
+
+function dbGet(store, key) {
+  return new Promise((resolve) => {
+    if (!db) return resolve(null);
+    const req = db.transaction(store).objectStore(store).get(key);
+    req.onsuccess = (e) => resolve(e.target.result ?? null);
+    req.onerror   = () => resolve(null);
+  });
+}
+
+async function saveItem(record) {
+  if (!db) return;
+  const data = {
+    id:     record.id,
+    type:   record.type,
+    x:      parseFloat(record.el.style.left),
+    y:      parseFloat(record.el.style.top),
+    zIndex: parseInt(record.el.style.zIndex) || 0,
+  };
+  if (record.type === 'img') {
+    const src = record.contentEl.src;
+    if (!src) return;
+    try {
+      const res  = await fetch(src);
+      const blob = await res.blob();
+      data.imageData = await blob.arrayBuffer();
+      data.imageType = blob.type || 'image/png';
+      data.width     = record.contentEl.parentElement.offsetWidth;
+      data.label     = record.labelEl ? record.labelEl.value : '';
+    } catch { return; }
+  } else {
+    data.text   = record.contentEl.value;
+    data.width  = record.contentEl.offsetWidth;
+    data.height = record.contentEl.offsetHeight;
+  }
+  dbPut('items', data);
+}
+
+let vpSaveTimer = null;
+function saveViewport() {
+  clearTimeout(vpSaveTimer);
+  vpSaveTimer = setTimeout(() => {
+    dbPut('meta', { key: 'viewport', panX, panY, scale });
+  }, 500);
+}
+
+async function restoreAll() {
+  db = await openDB();
+  const [meta, savedItems] = await Promise.all([
+    dbGet('meta', 'viewport'),
+    dbGetAll('items'),
+  ]);
+
+  panX = meta?.panX ?? 0;
+  panY = meta?.panY ?? 0;
+  scale = meta?.scale ?? 1;
+  applyTransform();
+
+  savedItems.sort((a, b) => a.zIndex - b.zIndex);
+  for (const saved of savedItems) {
+    let rec;
+    if (saved.type === 'img') {
+      const blob = new Blob([saved.imageData], { type: saved.imageType || 'image/png' });
+      rec = createItem('img', saved.x, saved.y, { restore: true });
+      rec.contentEl.parentElement.style.width = (saved.width || 300) + 'px';
+      rec.el.style.zIndex = saved.zIndex;
+      rec.contentEl.src = URL.createObjectURL(blob);
+      if (saved.label && rec.labelEl) {
+        rec.labelEl.value = saved.label;
+        if (rec._autoGrowLabel) rec._autoGrowLabel();
+      }
+    } else {
+      rec = createItem('note', saved.x, saved.y, { restore: true });
+      rec.contentEl.value = saved.text || '';
+      if (saved.width)  rec.contentEl.style.width  = saved.width  + 'px';
+      if (saved.height) rec.contentEl.style.height = saved.height + 'px';
+      rec.el.style.zIndex = saved.zIndex;
+    }
+    rec.id = saved.id;
+    itemCounter = Math.max(itemCounter, saved.id);
+  }
+}
+
+// ── Remove ─────────────────────────────────────────────────────────────────
+function removeItem(record) {
+  dbDelete('items', record.id);
+  if (record.type === 'img' && record.contentEl.src.startsWith('blob:')) {
+    URL.revokeObjectURL(record.contentEl.src);
+  }
+  record.el.remove();
+  items = items.filter(i => i !== record);
+  if (selectedItem === record) selectedItem = null;
+}
+
+// ── Copy helpers ───────────────────────────────────────────────────────────
+async function copyImage(imgEl) {
+  try {
+    const res = await fetch(imgEl.src);
+    const blob = await res.blob();
+    // Convert to PNG for clipboard compatibility
+    const bmp = await createImageBitmap(blob);
+    const cvs = document.createElement('canvas');
+    cvs.width = bmp.width; cvs.height = bmp.height;
+    cvs.getContext('2d').drawImage(bmp, 0, 0);
+    cvs.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob })
+      ]);
+      toast('Image copied to clipboard!');
+    }, 'image/png');
+  } catch (err) {
+    toast('Copy failed: ' + err.message);
+  }
+}
+
+async function copyText(textarea) {
+  const text = textarea.value;
+  if (!text.trim()) { toast('Nothing to copy'); return; }
+  await navigator.clipboard.writeText(text);
+  toast('Text copied to clipboard!');
+}
+
+// ── Shared image placer ────────────────────────────────────────────────────
+function placeImage(url) {
+  const c   = viewportCenter();
+  const rec = createItem('img', c.x - 150, c.y - 100);
+  rec.contentEl.onload = () => {
+    const w = rec.contentEl.naturalWidth;
+    rec.contentEl.parentElement.style.width = w + 'px';
+    rec.el.style.left = (c.x - w / 2) + 'px';
+    rec.el.style.top  = (c.y - rec.contentEl.naturalHeight / 2) + 'px';
+    saveItem(rec);
+  };
+  rec.contentEl.src = url;
+}
+
+// ── Paste handler ──────────────────────────────────────────────────────────
+document.addEventListener('paste', (e) => {
+  if (e.target.tagName === 'TEXTAREA') return;
+
+  const items_dt = e.clipboardData.items;
+  let handled = false;
+
+  for (const item of items_dt) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      placeImage(URL.createObjectURL(item.getAsFile()));
+      handled = true;
+      break;
+    }
+  }
+
+  if (!handled) {
+    for (const item of items_dt) {
+      if (item.kind === 'string' && item.type === 'text/plain') {
+        item.getAsString((text) => {
+          if (!text.trim()) return;
+          const c   = viewportCenter();
+          const rec = createItem('note', c.x - 90, c.y - 40);
+          rec.contentEl.value = text;
+        });
+        handled = true;
+        break;
+      }
+    }
+  }
+});
+
+// ── Dragging items ─────────────────────────────────────────────────────────
+function makeDraggable(record) {
+  const el = record.el;
+  let dragging = false;
+  let ox, oy;
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' ||
+        e.target.tagName === 'BUTTON'   ||
+        e.target.classList.contains('resize-handle')) return;
+    e.preventDefault();
+    dragging = true;
+    el.setPointerCapture(e.pointerId);
+
+    const rect = el.getBoundingClientRect();
+    ox = (e.clientX - rect.left);
+    oy = (e.clientY - rect.top);
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const vr = viewport.getBoundingClientRect();
+    const nx = (e.clientX - vr.left - ox - panX) / scale;
+    const ny = (e.clientY - vr.top  - oy - panY) / scale;
+    el.style.left = nx + 'px';
+    el.style.top  = ny + 'px';
+    record.x = nx; record.y = ny;
+  });
+
+  el.addEventListener('pointerup',     () => { if (dragging) saveItem(record); dragging = false; });
+  el.addEventListener('pointercancel', () => { dragging = false; });
+}
+
+// ── Panning the canvas ─────────────────────────────────────────────────────
+{
+  let panning = false, panMoved = false, px0, py0;
+
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.target !== viewport && e.target !== surface) return;
+    panning = true;
+    panMoved = false;
+    px0 = e.clientX - panX;
+    py0 = e.clientY - panY;
+    viewport.style.cursor = 'grabbing';
+    viewport.setPointerCapture(e.pointerId);
+  });
+
+  viewport.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    panMoved = true;
+    panX = e.clientX - px0;
+    panY = e.clientY - py0;
+    applyTransform();
+  });
+
+  const stopPan = () => { panning = false; viewport.style.cursor = 'default'; };
+  viewport.addEventListener('pointerup', (e) => {
+    if (!panMoved && (e.target === viewport || e.target === surface)) {
+      if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+    }
+    if (panMoved) saveViewport();
+    stopPan();
+  });
+  viewport.addEventListener('pointercancel', stopPan);
+}
+
+// ── Toolbar hover (no blocking elements — pure pointermove hit-test) ───────
+viewport.addEventListener('pointermove', (e) => {
+  for (const record of items) {
+    const rect = record.el.getBoundingClientRect();
+    const inZone = e.clientX >= rect.left && e.clientX <= rect.right &&
+                   e.clientY >= rect.top - 36 && e.clientY <= rect.bottom;
+    record.el.classList.toggle('toolbar-active', inZone);
+  }
+});
+viewport.addEventListener('pointerleave', () => {
+  for (const record of items) record.el.classList.remove('toolbar-active');
+});
+
+// ── Zooming ────────────────────────────────────────────────────────────────
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+  const newScale = Math.min(5, Math.max(0.1, scale * delta));
+
+  const vr = viewport.getBoundingClientRect();
+  const mx = e.clientX - vr.left;
+  const my = e.clientY - vr.top;
+
+  panX = mx - (mx - panX) * (newScale / scale);
+  panY = my - (my - panY) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+  saveViewport();
+}, { passive: false });
+
+// ── Toolbar buttons ────────────────────────────────────────────────────────
+document.getElementById('btn-note').addEventListener('click', () => {
+  const c = viewportCenter();
+  createItem('note', c.x - 90, c.y - 40);
+});
+
+document.getElementById('btn-paste-img').addEventListener('click', async () => {
+  try {
+    const items_cb = await navigator.clipboard.read();
+    for (const ci of items_cb) {
+      const type = ci.types.find(t => t.startsWith('image/'));
+      if (type) {
+        placeImage(URL.createObjectURL(await ci.getType(type)));
+        return;
+      }
+    }
+    toast('No image in clipboard. Try Ctrl+V instead.');
+  } catch {
+    toast('Use Ctrl+V to paste from clipboard.');
+  }
+});
+
+document.getElementById('btn-clear-sel').addEventListener('click', () => {
+  if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+});
+
+document.getElementById('btn-delete-sel').addEventListener('click', () => {
+  if (selectedItem) removeItem(selectedItem);
+  else toast('No item selected');
+});
+
+document.getElementById('btn-reset-view').addEventListener('click', () => {
+  scale = 1; panX = 0; panY = 0;
+  applyTransform();
+});
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedItem) removeItem(selectedItem);
+  }
+  if (e.key === 'Escape') {
+    if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+  }
+  // Ctrl+C on selected item
+  if (e.ctrlKey && e.key === 'c' && selectedItem) {
+    if (selectedItem.type === 'img')  copyImage(selectedItem.contentEl);
+    if (selectedItem.type === 'note') copyText(selectedItem.contentEl);
+  }
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+restoreAll().then(() => {
+  if (items.length === 0) {
+    toast('Ctrl+V to paste images or text  ·  Scroll to zoom  ·  Drag to pan', 3500);
+  }
+});
+</script>
+</body>
+</html>
