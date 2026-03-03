@@ -229,6 +229,49 @@
       background: linear-gradient(135deg, transparent 50%, #2d6be0 50%);
     }
 
+    /* ── Tab bar ── */
+    #tab-bar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 8px 0;
+      background: #1e1e1e;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-bottom: none;
+      border-radius: 5px 5px 0 0;
+      cursor: pointer;
+      font-size: 12px;
+      color: #aaa;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .tab.active { background: #333; color: #eee; border-color: #555; }
+    .tab-name { outline: none; }
+    .tab-close {
+      background: none; border: none; color: #666;
+      cursor: pointer; font-size: 14px; padding: 0 0 0 4px;
+      line-height: 1;
+    }
+    .tab-close:hover { color: #e55; }
+    #add-tab-btn {
+      padding: 2px 9px;
+      background: none; border: 1px solid #444;
+      border-radius: 4px; color: #888;
+      cursor: pointer; font-size: 16px; flex-shrink: 0;
+      margin-left: 4px;
+    }
+    #add-tab-btn:hover { background: #333; color: #ccc; }
+
     /* ── Toast ── */
     #toast {
       position: fixed;
@@ -267,6 +310,10 @@
   <small style="color:#666;font-size:11px">Ctrl+V paste · Scroll zoom · Drag canvas to pan</small>
 </div>
 
+<div id="tab-bar">
+  <button id="add-tab-btn">+</button>
+</div>
+
 <div id="viewport">
   <div id="canvas-surface"></div>
 </div>
@@ -284,6 +331,9 @@ let panX = 0, panY = 0;
 let items = [];          // {el, type, x, y}
 let selectedItem = null;
 let itemCounter = 0;
+let tabs = [];
+let currentTabId = null;
+let tabCounter = 0;
 
 // ── Transform ──────────────────────────────────────────────────────────────
 function applyTransform() {
@@ -495,11 +545,12 @@ let db = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('paste-canvas', 1);
+    const req = indexedDB.open('paste-canvas', 2);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('meta'))  d.createObjectStore('meta',  { keyPath: 'key' });
+      if (!d.objectStoreNames.contains('tabs'))  d.createObjectStore('tabs',  { keyPath: 'id' });
     };
     req.onsuccess = (e) => resolve(e.target.result);
     req.onerror   = (e) => reject(e.target.error);
@@ -539,6 +590,7 @@ async function saveItem(record) {
   const data = {
     id:     record.id,
     type:   record.type,
+    tabId:  currentTabId,
     x:      parseFloat(record.el.style.left),
     y:      parseFloat(record.el.style.top),
     zIndex: parseInt(record.el.style.zIndex) || 0,
@@ -566,24 +618,30 @@ let vpSaveTimer = null;
 function saveViewport() {
   clearTimeout(vpSaveTimer);
   vpSaveTimer = setTimeout(() => {
-    dbPut('meta', { key: 'viewport', panX, panY, scale });
+    if (currentTabId !== null)
+      dbPut('meta', { key: `viewport-${currentTabId}`, panX, panY, scale });
   }, 500);
 }
 
-async function restoreAll() {
-  db = await openDB();
-  const [meta, savedItems] = await Promise.all([
-    dbGet('meta', 'viewport'),
-    dbGetAll('items'),
-  ]);
+function unloadItems() {
+  for (const rec of items) {
+    if (rec.type === 'img' && rec.contentEl?.src?.startsWith('blob:'))
+      URL.revokeObjectURL(rec.contentEl.src);
+    rec.el.remove();
+  }
+  items = [];
+  selectedItem = null;
+}
 
-  panX = meta?.panX ?? 0;
-  panY = meta?.panY ?? 0;
-  scale = meta?.scale ?? 1;
-  applyTransform();
-
-  savedItems.sort((a, b) => a.zIndex - b.zIndex);
-  for (const saved of savedItems) {
+async function loadTab(tabId) {
+  const allItems = await dbGetAll('items');
+  // Items with no tabId are legacy data — migrate them to the first tab
+  const firstTabId = tabs[0]?.id;
+  const tabItems = allItems.filter(s =>
+    s.tabId === tabId || (s.tabId === undefined && tabId === firstTabId)
+  );
+  tabItems.sort((a, b) => a.zIndex - b.zIndex);
+  for (const saved of tabItems) {
     let rec;
     if (saved.type === 'img') {
       const blob = new Blob([saved.imageData], { type: saved.imageType || 'image/png' });
@@ -603,8 +661,126 @@ async function restoreAll() {
       rec.el.style.zIndex = saved.zIndex;
     }
     rec.id = saved.id;
-    itemCounter = Math.max(itemCounter, saved.id);
   }
+  // Load viewport — fall back to old 'viewport' key for migration
+  let vpMeta = await dbGet('meta', `viewport-${tabId}`);
+  if (!vpMeta && tabId === firstTabId) vpMeta = await dbGet('meta', 'viewport');
+  panX = vpMeta?.panX ?? 0;
+  panY = vpMeta?.panY ?? 0;
+  scale = vpMeta?.scale ?? 1;
+  applyTransform();
+}
+
+function renderTabBar() {
+  const bar = document.getElementById('tab-bar');
+  bar.querySelectorAll('.tab').forEach(el => el.remove());
+  const addBtn = document.getElementById('add-tab-btn');
+  for (const tab of tabs) {
+    const tabEl = document.createElement('div');
+    tabEl.className = 'tab' + (tab.id === currentTabId ? ' active' : '');
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tab-name';
+    nameSpan.textContent = tab.name;
+
+    nameSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      nameSpan.contentEditable = 'true';
+      nameSpan.focus();
+      const range = document.createRange();
+      range.selectNodeContents(nameSpan);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    const commitName = () => {
+      nameSpan.contentEditable = 'false';
+      const newName = nameSpan.textContent.trim() || tab.name;
+      nameSpan.textContent = newName;
+      tab.name = newName;
+      dbPut('tabs', tab);
+    };
+    nameSpan.addEventListener('blur', commitName);
+    nameSpan.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); commitName(); nameSpan.blur(); }
+      if (e.key === 'Escape') { nameSpan.textContent = tab.name; nameSpan.contentEditable = 'false'; nameSpan.blur(); }
+    });
+
+    tabEl.addEventListener('click', () => {
+      if (nameSpan.contentEditable === 'true') return;
+      switchTab(tab.id);
+    });
+    tabEl.appendChild(nameSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'tab-close';
+    closeBtn.textContent = '×';
+    closeBtn.title = 'Close tab';
+    closeBtn.style.display = tabs.length === 1 ? 'none' : '';
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteTab(tab.id); });
+    tabEl.appendChild(closeBtn);
+
+    bar.insertBefore(tabEl, addBtn);
+  }
+}
+
+async function switchTab(tabId) {
+  if (tabId === currentTabId) return;
+  clearTimeout(vpSaveTimer);
+  dbPut('meta', { key: `viewport-${currentTabId}`, panX, panY, scale });
+  unloadItems();
+  currentTabId = tabId;
+  dbPut('meta', { key: 'activeTab', tabId });
+  renderTabBar();
+  await loadTab(tabId);
+}
+
+async function createTab(name) {
+  const id = ++tabCounter;
+  const tab = { id, name, order: tabs.length };
+  tabs.push(tab);
+  dbPut('tabs', tab);
+  await switchTab(id);
+}
+
+async function deleteTab(tabId) {
+  if (tabs.length <= 1) { toast("Can't delete the last tab"); return; }
+  const idx = tabs.findIndex(t => t.id === tabId);
+  const nextTab = tabs[idx + 1] ?? tabs[idx - 1];
+  if (tabId === currentTabId) await switchTab(nextTab.id);
+  const allItems = await dbGetAll('items');
+  for (const item of allItems) {
+    if (item.tabId === tabId) dbDelete('items', item.id);
+  }
+  dbDelete('meta', `viewport-${tabId}`);
+  dbDelete('tabs', tabId);
+  tabs = tabs.filter(t => t.id !== tabId);
+  renderTabBar();
+}
+
+async function restoreAll() {
+  db = await openDB();
+  // Set itemCounter from all items across all tabs
+  const allItems = await dbGetAll('items');
+  for (const item of allItems) itemCounter = Math.max(itemCounter, item.id);
+
+  let savedTabs = await dbGetAll('tabs');
+  if (savedTabs.length === 0) {
+    const defaultTab = { id: 1, name: 'Board 1', order: 0 };
+    dbPut('tabs', defaultTab);
+    savedTabs = [defaultTab];
+    tabCounter = 1;
+  } else {
+    tabCounter = Math.max(...savedTabs.map(t => t.id));
+  }
+  tabs = savedTabs.sort((a, b) => a.order - b.order);
+
+  const activeMeta = await dbGet('meta', 'activeTab');
+  currentTabId = activeMeta?.tabId ?? tabs[0].id;
+  if (!tabs.find(t => t.id === currentTabId)) currentTabId = tabs[0].id;
+
+  renderTabBar();
+  await loadTab(currentTabId);
 }
 
 // ── Remove ─────────────────────────────────────────────────────────────────
@@ -821,6 +997,11 @@ document.getElementById('btn-delete-sel').addEventListener('click', () => {
 document.getElementById('btn-reset-view').addEventListener('click', () => {
   scale = 1; panX = 0; panY = 0;
   applyTransform();
+  saveViewport();
+});
+
+document.getElementById('add-tab-btn').addEventListener('click', () => {
+  createTab(`Board ${tabs.length + 1}`);
 });
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
