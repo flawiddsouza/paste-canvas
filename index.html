@@ -334,6 +334,7 @@ let itemCounter = 0;
 let tabs = [];
 let currentTabId = null;
 let tabCounter = 0;
+let placeOffset = 0;
 
 // ── Transform ──────────────────────────────────────────────────────────────
 function applyTransform() {
@@ -726,6 +727,7 @@ function renderTabBar() {
 
 async function switchTab(tabId) {
   if (tabId === currentTabId) return;
+  placeOffset = 0;
   clearTimeout(vpSaveTimer);
   dbPut('meta', { key: `viewport-${currentTabId}`, panX, panY, scale });
   unloadItems();
@@ -857,7 +859,8 @@ document.addEventListener('paste', (e) => {
         item.getAsString((text) => {
           if (!text.trim()) return;
           const c   = viewportCenter();
-          const rec = createItem('note', c.x - 90, c.y - 40);
+          const off = placeOffset++ * 24;
+          const rec = createItem('note', c.x - 90 + off, c.y - 40 + off);
           rec.contentEl.value = text;
         });
         handled = true;
@@ -966,7 +969,8 @@ viewport.addEventListener('wheel', (e) => {
 // ── Toolbar buttons ────────────────────────────────────────────────────────
 document.getElementById('btn-note').addEventListener('click', () => {
   const c = viewportCenter();
-  createItem('note', c.x - 90, c.y - 40);
+  const off = placeOffset++ * 24;
+  createItem('note', c.x - 90 + off, c.y - 40 + off);
 });
 
 document.getElementById('btn-paste-img').addEventListener('click', async () => {
