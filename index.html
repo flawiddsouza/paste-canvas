@@ -536,7 +536,10 @@ function createItem(type, x, y, opts = {}) {
   }
   if (!opts.restore) {
     selectItem(record);
-    if (type === 'note') contentEl.focus();
+    if (type === 'note') {
+      contentEl.focus();
+      saveItem(record);
+    }
   }
   return record;
 }
