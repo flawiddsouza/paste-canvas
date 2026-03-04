@@ -449,10 +449,10 @@ function toggleSelection(item) {
 const edgeLayer = document.getElementById('edge-layer');
 
 function getPortPos(record, side) {
-  const x = parseFloat(record.el.style.left) || 0;
-  const y = parseFloat(record.el.style.top)  || 0;
-  const w = record.el.offsetWidth;
-  const h = record.el.offsetHeight;
+  const x = record.x;
+  const y = record.y;
+  const w = record.w || record.el.offsetWidth;
+  const h = record.h || record.el.offsetHeight;
   switch (side) {
     case 'top':    return { x: x + w / 2, y };
     case 'right':  return { x: x + w,     y: y + h / 2 };
@@ -576,8 +576,6 @@ function findDropTarget(clientX, clientY, excludeRecord) {
 function startEdgeDrag(fromRecord, fromSide, e) {
   clearSelection();
   const pid = e.pointerId;
-
-
   const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   preview.setAttribute('class', 'edge-preview');
   edgeLayer.appendChild(preview);
@@ -656,6 +654,7 @@ function createItem(type, x, y, opts = {}) {
       };
       const onUp = () => {
         saveItem(record);
+        updateEdgesForItems(new Set([record]));
         rh.removeEventListener('pointermove',   onMove);
         rh.removeEventListener('pointerup',     onUp);
         rh.removeEventListener('pointercancel', onUp);
@@ -696,6 +695,7 @@ function createItem(type, x, y, opts = {}) {
       };
       const onUp = () => {
         saveItem(record);
+        updateEdgesForItems(new Set([record]));
         rh.removeEventListener('pointermove',   onMove);
         rh.removeEventListener('pointerup',     onUp);
         rh.removeEventListener('pointercancel', onUp);
@@ -840,12 +840,16 @@ function dbGet(store, key) {
 
 async function saveItem(record) {
   if (!db) return;
+  record.w = record.el.offsetWidth;
+  record.h = record.el.offsetHeight;
   const data = {
     id:     record.id,
     type:   record.type,
     tabId:  currentTabId,
-    x:      parseFloat(record.el.style.left),
-    y:      parseFloat(record.el.style.top),
+    x:      record.x,
+    y:      record.y,
+    w:      record.w,
+    h:      record.h,
     zIndex: parseInt(record.el.style.zIndex) || 0,
   };
   if (record.type === 'img') {
@@ -903,6 +907,11 @@ async function loadTab(tabId) {
       rec = createItem('img', saved.x, saved.y, { restore: true });
       rec.contentEl.parentElement.style.width = (saved.width || 300) + 'px';
       rec.el.style.zIndex = saved.zIndex;
+      rec.contentEl.onload = () => {
+        rec.w = rec.el.offsetWidth;
+        rec.h = rec.el.offsetHeight;
+        updateEdgesForItems(new Set([rec]));
+      };
       rec.contentEl.src = URL.createObjectURL(blob);
       if (saved.label && rec.labelEl) {
         rec.labelEl.value = saved.label;
@@ -916,9 +925,10 @@ async function loadTab(tabId) {
       rec.el.style.zIndex = saved.zIndex;
     }
     rec.id = saved.id;
+    if (saved.w != null) rec.w = saved.w;
+    if (saved.h != null) rec.h = saved.h;
   }
   // Load edges for this tab
-  edgeLayer.style.visibility = 'hidden';
   const savedEdges = (await dbGetAll('edges')).filter(e => e.tabId === tabId);
   if (savedEdges.length) edgeCounter = Math.max(edgeCounter, ...savedEdges.map(e => e.id));
   for (const saved of savedEdges) {
@@ -935,11 +945,6 @@ async function loadTab(tabId) {
     nodeEdgeMap.get(toRec.id).add(edgeRec);
     renderEdge(edgeRec);
   }
-  // Re-draw edges after layout so offsetWidth/offsetHeight are available
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    for (const e of edges) updateEdgePath(e);
-    edgeLayer.style.visibility = '';
-  }));
 
   // Load viewport — fall back to old 'viewport' key for migration
   let vpMeta = await dbGet('meta', `viewport-${tabId}`);
