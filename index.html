@@ -97,6 +97,16 @@
       outline-offset: 2px;
     }
 
+    /* ── Marquee selection box ── */
+    #marquee {
+      position: absolute;
+      display: none;
+      border: 1px solid #2d6be0;
+      background: rgba(45, 107, 224, 0.10);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
     .item-inner {
       position: relative;
       border-radius: 4px;
@@ -309,7 +319,7 @@
   <span id="zoom-label">100%</span>
   <span id="coords-label" style="font-size:11px;color:#555;min-width:80px">0, 0</span>
   <div class="sep"></div>
-  <small style="color:#666;font-size:11px">Ctrl+V paste · Scroll zoom · Drag canvas to pan</small>
+  <small style="color:#666;font-size:11px">Ctrl+V paste · Scroll zoom · Drag canvas to pan · Shift/Ctrl+drag to select</small>
 </div>
 
 <div id="tab-bar">
@@ -318,6 +328,7 @@
 
 <div id="viewport">
   <div id="canvas-surface"></div>
+  <div id="marquee"></div>
 </div>
 
 <div id="toast"></div>
@@ -332,7 +343,7 @@ const coordsLabel = document.getElementById('coords-label');
 let scale = 1;
 let panX = 0, panY = 0;
 let items = [];          // {el, type, x, y}
-let selectedItem = null;
+let selectedItems = new Set();
 let itemCounter = 0;
 let tabs = [];
 let currentTabId = null;
@@ -367,12 +378,25 @@ function viewportCenter() {
   };
 }
 
+function clearSelection() {
+  for (const item of selectedItems) item.el.classList.remove('selected');
+  selectedItems.clear();
+}
+function addToSelection(item) {
+  selectedItems.add(item);
+  item.el.classList.add('selected');
+  item.el.style.zIndex = ++itemCounter;
+}
 function selectItem(item) {
-  if (selectedItem) selectedItem.el.classList.remove('selected');
-  selectedItem = item;
-  if (item) {
-    item.el.classList.add('selected');
-    item.el.style.zIndex = ++itemCounter;
+  clearSelection();
+  if (item) addToSelection(item);
+}
+function toggleSelection(item) {
+  if (selectedItems.has(item)) {
+    selectedItems.delete(item);
+    item.el.classList.remove('selected');
+  } else {
+    addToSelection(item);
   }
 }
 
@@ -511,11 +535,6 @@ function createItem(type, x, y, opts = {}) {
   items.push(record);
 
   makeDraggable(record);
-  el.addEventListener('pointerdown', (e) => {
-    if (e.target === contentEl || e.target.classList.contains('item-btn')) return;
-    selectItem(record);
-  });
-  el.addEventListener('click', () => selectItem(record));
 
   if (type === 'note') {
     let noteTimer = null;
@@ -641,7 +660,7 @@ function unloadItems() {
     rec.el.remove();
   }
   items = [];
-  selectedItem = null;
+  selectedItems.clear();
 }
 
 async function loadTab(tabId) {
@@ -803,7 +822,8 @@ function removeItem(record) {
   }
   record.el.remove();
   items = items.filter(i => i !== record);
-  if (selectedItem === record) selectedItem = null;
+  selectedItems.delete(record);
+  record.el.classList.remove('selected');
 }
 
 // ── Copy helpers ───────────────────────────────────────────────────────────
@@ -884,66 +904,150 @@ document.addEventListener('paste', (e) => {
 function makeDraggable(record) {
   const el = record.el;
   let dragging = false;
-  let ox, oy;
+  let startCanvasX, startCanvasY;
+  let startPositions; // Map<item, {x, y}>
 
   el.addEventListener('pointerdown', (e) => {
     if (e.target.tagName === 'TEXTAREA' ||
         e.target.tagName === 'BUTTON'   ||
         e.target.classList.contains('resize-handle')) return;
+
+    const multiKey = e.shiftKey || e.ctrlKey;
+    if (multiKey) {
+      toggleSelection(record);
+      e.stopPropagation();
+      if (!selectedItems.has(record)) return; // just deselected, no drag
+    } else {
+      if (!selectedItems.has(record)) selectItem(record);
+    }
+
     e.preventDefault();
     dragging = true;
     el.setPointerCapture(e.pointerId);
 
-    const rect = el.getBoundingClientRect();
-    ox = (e.clientX - rect.left);
-    oy = (e.clientY - rect.top);
+    const vr = viewport.getBoundingClientRect();
+    startCanvasX = (e.clientX - vr.left - panX) / scale;
+    startCanvasY = (e.clientY - vr.top  - panY) / scale;
+    startPositions = new Map();
+    for (const item of selectedItems) {
+      startPositions.set(item, {
+        x: parseFloat(item.el.style.left) || 0,
+        y: parseFloat(item.el.style.top)  || 0,
+      });
+    }
   });
 
   el.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const vr = viewport.getBoundingClientRect();
-    const nx = (e.clientX - vr.left - ox - panX) / scale;
-    const ny = (e.clientY - vr.top  - oy - panY) / scale;
-    el.style.left = nx + 'px';
-    el.style.top  = ny + 'px';
-    record.x = nx; record.y = ny;
+    const cx = (e.clientX - vr.left - panX) / scale;
+    const cy = (e.clientY - vr.top  - panY) / scale;
+    const dx = cx - startCanvasX;
+    const dy = cy - startCanvasY;
+    for (const [item, start] of startPositions) {
+      item.el.style.left = (start.x + dx) + 'px';
+      item.el.style.top  = (start.y + dy) + 'px';
+      item.x = start.x + dx;
+      item.y = start.y + dy;
+    }
   });
 
-  el.addEventListener('pointerup',     () => { if (dragging) saveItem(record); dragging = false; });
+  el.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    for (const item of selectedItems) saveItem(item);
+  });
+
   el.addEventListener('pointercancel', () => { dragging = false; });
 }
 
-// ── Panning the canvas ─────────────────────────────────────────────────────
+// ── Panning and marquee selection ──────────────────────────────────────────
 {
-  let panning = false, panMoved = false, px0, py0;
+  const marqueeEl = document.getElementById('marquee');
+  let mode = 'idle'; // 'idle' | 'panning' | 'marquee'
+  let panMoved = false;
+  let px0, py0;
+  let mStartX, mStartY;
 
   viewport.addEventListener('pointerdown', (e) => {
     if (e.target !== viewport && e.target !== surface) return;
-    panning = true;
-    panMoved = false;
     px0 = e.clientX - panX;
     py0 = e.clientY - panY;
-    viewport.style.cursor = 'grabbing';
-    viewport.setPointerCapture(e.pointerId);
+
+    if (e.shiftKey || e.ctrlKey) {
+      mode = 'marquee';
+      panMoved = false;
+      const vr = viewport.getBoundingClientRect();
+      mStartX = e.clientX - vr.left;
+      mStartY = e.clientY - vr.top;
+      marqueeEl.style.cssText = `display:block;left:${mStartX}px;top:${mStartY}px;width:0;height:0`;
+      viewport.setPointerCapture(e.pointerId);
+    } else {
+      mode = 'panning';
+      panMoved = false;
+      viewport.style.cursor = 'grabbing';
+      viewport.setPointerCapture(e.pointerId);
+    }
   });
 
   viewport.addEventListener('pointermove', (e) => {
-    if (!panning) return;
-    panMoved = true;
-    panX = e.clientX - px0;
-    panY = e.clientY - py0;
-    applyTransform();
+    if (mode === 'panning') {
+      panMoved = true;
+      panX = e.clientX - px0;
+      panY = e.clientY - py0;
+      applyTransform();
+    } else if (mode === 'marquee') {
+      panMoved = true;
+      const vr = viewport.getBoundingClientRect();
+      const cx = e.clientX - vr.left, cy = e.clientY - vr.top;
+      marqueeEl.style.left   = Math.min(mStartX, cx) + 'px';
+      marqueeEl.style.top    = Math.min(mStartY, cy) + 'px';
+      marqueeEl.style.width  = Math.abs(cx - mStartX) + 'px';
+      marqueeEl.style.height = Math.abs(cy - mStartY) + 'px';
+    }
   });
 
-  const stopPan = () => { panning = false; viewport.style.cursor = 'default'; };
   viewport.addEventListener('pointerup', (e) => {
-    if (!panMoved && (e.target === viewport || e.target === surface)) {
-      if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+    if (mode === 'panning') {
+      if (!panMoved) clearSelection();
+      if (panMoved) saveViewport();
+      viewport.style.cursor = 'default';
+    } else if (mode === 'marquee') {
+      marqueeEl.style.display = 'none';
+      const vr  = viewport.getBoundingClientRect();
+      const cx  = e.clientX - vr.left, cy = e.clientY - vr.top;
+      const rx1 = Math.min(mStartX, cx), ry1 = Math.min(mStartY, cy);
+      const rx2 = Math.max(mStartX, cx), ry2 = Math.max(mStartY, cy);
+      if (rx2 - rx1 > 4 || ry2 - ry1 > 4) {
+        clearSelection();
+        for (const item of items) {
+          const ir = item.el.getBoundingClientRect();
+          if (ir.right > vr.left + rx1 && ir.left < vr.left + rx2 &&
+              ir.bottom > vr.top + ry1 && ir.top < vr.top + ry2) {
+            addToSelection(item);
+          }
+        }
+      } else {
+        clearSelection();
+      }
     }
-    if (panMoved) saveViewport();
-    stopPan();
+    mode = 'idle';
+    panMoved = false;
   });
-  viewport.addEventListener('pointercancel', stopPan);
+
+  viewport.addEventListener('pointercancel', () => {
+    marqueeEl.style.display = 'none';
+    viewport.style.cursor = 'default';
+    mode = 'idle';
+    panMoved = false;
+  });
+
+  window.addEventListener('blur', () => {
+    marqueeEl.style.display = 'none';
+    viewport.style.cursor = 'default';
+    mode = 'idle';
+    panMoved = false;
+  });
 }
 
 // ── Toolbar hover (no blocking elements — pure pointermove hit-test) ───────
@@ -1000,12 +1104,12 @@ document.getElementById('btn-paste-img').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-clear-sel').addEventListener('click', () => {
-  if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+  clearSelection();
 });
 
 document.getElementById('btn-delete-sel').addEventListener('click', () => {
-  if (selectedItem) removeItem(selectedItem);
-  else toast('No item selected');
+  if (selectedItems.size === 0) { toast('No item selected'); return; }
+  for (const item of [...selectedItems]) removeItem(item);
 });
 
 document.getElementById('btn-reset-view').addEventListener('click', () => {
@@ -1022,15 +1126,16 @@ document.getElementById('add-tab-btn').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selectedItem) removeItem(selectedItem);
+    for (const item of [...selectedItems]) removeItem(item);
   }
   if (e.key === 'Escape') {
-    if (selectedItem) { selectedItem.el.classList.remove('selected'); selectedItem = null; }
+    clearSelection();
   }
-  // Ctrl+C on selected item
-  if (e.ctrlKey && e.key === 'c' && selectedItem) {
-    if (selectedItem.type === 'img')  copyImage(selectedItem.contentEl);
-    if (selectedItem.type === 'note') copyText(selectedItem.contentEl);
+  // Ctrl+C on selected item(s) — copy if single selection
+  if (e.ctrlKey && e.key === 'c' && selectedItems.size === 1) {
+    const item = [...selectedItems][0];
+    if (item.type === 'img')  copyImage(item.contentEl);
+    if (item.type === 'note') copyText(item.contentEl);
   }
 });
 
