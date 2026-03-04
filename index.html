@@ -283,6 +283,32 @@
     }
     #add-tab-btn:hover { background: #333; color: #ccc; }
 
+    /* ── Port dots ── */
+    .port {
+      position: absolute; width: 10px; height: 10px;
+      border-radius: 50%; background: #2d6be0; border: 2px solid #fff;
+      cursor: crosshair; z-index: 20; opacity: 0;
+      pointer-events: none; transition: opacity .1s;
+    }
+    .item:hover .port { opacity: 1; pointer-events: all; }
+    .port-top    { top: -5px;    left: 50%; transform: translateX(-50%); }
+    .port-right  { right: -5px;  top: 50%;  transform: translateY(-50%); }
+    .port-bottom { bottom: -5px; left: 50%; transform: translateX(-50%); }
+    .port-left   { left: -5px;   top: 50%;  transform: translateY(-50%); }
+
+    /* ── Edge SVG layer ── */
+    #edge-layer {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      overflow: visible; pointer-events: none;
+      transform-origin: 0 0;
+    }
+    .edge-path { fill: none; stroke: #888; stroke-width: 2; }
+    .edge-path.selected { stroke: #2d6be0; }
+    .edge-hit  { fill: none; stroke: transparent; stroke-width: 16;
+                 pointer-events: stroke; cursor: pointer; }
+    .edge-preview { fill: none; stroke: #2d6be0; stroke-width: 2;
+                    stroke-dasharray: 6 4; pointer-events: none; }
+
     /* ── Toast ── */
     #toast {
       position: fixed;
@@ -328,6 +354,13 @@
 
 <div id="viewport">
   <div id="canvas-surface"></div>
+  <svg id="edge-layer">
+    <defs>
+      <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+        <polygon points="0 0, 6 2, 0 4" fill="context-stroke"/>
+      </marker>
+    </defs>
+  </svg>
   <div id="marquee"></div>
 </div>
 
@@ -349,10 +382,16 @@ let tabs = [];
 let currentTabId = null;
 let tabCounter = 0;
 let placeOffset = 0;
+let edges = [];
+const selectedEdges = new Set();
+let edgeCounter = 0;
+const nodeEdgeMap = new Map(); // Map<itemId, Set<edgeRecord>>
 
 // ── Transform ──────────────────────────────────────────────────────────────
 function applyTransform() {
-  surface.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  const t = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  surface.style.transform = t;
+  edgeLayer.style.transform = t;
   zoomLabel.textContent = Math.round(scale * 100) + '%';
   const gs = 40 * scale;
   viewport.style.backgroundSize = `${gs}px ${gs}px`;
@@ -378,11 +417,17 @@ function viewportCenter() {
   };
 }
 
+function clearEdgeSelection() {
+  for (const e of selectedEdges) e.pathEl.classList.remove('selected');
+  selectedEdges.clear();
+}
 function clearSelection() {
   for (const item of selectedItems) item.el.classList.remove('selected');
   selectedItems.clear();
+  clearEdgeSelection();
 }
 function addToSelection(item) {
+  clearEdgeSelection();
   selectedItems.add(item);
   item.el.classList.add('selected');
   item.el.style.zIndex = ++itemCounter;
@@ -398,6 +443,172 @@ function toggleSelection(item) {
   } else {
     addToSelection(item);
   }
+}
+
+// ── Edge helpers ───────────────────────────────────────────────────────────
+const edgeLayer = document.getElementById('edge-layer');
+
+function getPortPos(record, side) {
+  const x = parseFloat(record.el.style.left) || 0;
+  const y = parseFloat(record.el.style.top)  || 0;
+  const w = record.el.offsetWidth;
+  const h = record.el.offsetHeight;
+  switch (side) {
+    case 'top':    return { x: x + w / 2, y };
+    case 'right':  return { x: x + w,     y: y + h / 2 };
+    case 'bottom': return { x: x + w / 2, y: y + h };
+    case 'left':   return { x,             y: y + h / 2 };
+  }
+}
+
+function edgePathD(from, fromSide, to, toSide) {
+  const dist   = Math.hypot(to.x - from.x, to.y - from.y);
+  const offset = Math.min(Math.max(dist * 0.4, 40), 200);
+  const dirs   = { top: [0,-1], right: [1,0], bottom: [0,1], left: [-1,0] };
+  const [fdx, fdy] = dirs[fromSide];
+  const [tdx, tdy] = dirs[toSide];
+  const cp1x = from.x + fdx * offset, cp1y = from.y + fdy * offset;
+  const cp2x = to.x   + tdx * offset, cp2y = to.y   + tdy * offset;
+  return `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+}
+
+function updateEdgePath(edgeRec) {
+  const fromRec = items.find(i => i.id === edgeRec.fromNode);
+  const toRec   = items.find(i => i.id === edgeRec.toNode);
+  if (!fromRec || !toRec) return;
+  const d = edgePathD(getPortPos(fromRec, edgeRec.fromSide), edgeRec.fromSide,
+                       getPortPos(toRec,   edgeRec.toSide),   edgeRec.toSide);
+  edgeRec.pathEl.setAttribute('d', d);
+  edgeRec.hitEl.setAttribute('d', d);
+}
+
+function renderEdge(edgeRec) {
+  const g    = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const hit  = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('class', 'edge-path');
+  path.setAttribute('marker-end', 'url(#arrowhead)');
+  hit.setAttribute('class', 'edge-hit');
+  g.appendChild(path);
+  g.appendChild(hit);
+  edgeLayer.appendChild(g);
+  edgeRec.pathEl  = path;
+  edgeRec.hitEl   = hit;
+  edgeRec.groupEl = g;
+  hit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectEdge(edgeRec, e.shiftKey || e.ctrlKey);
+  });
+  updateEdgePath(edgeRec);
+}
+
+function selectEdge(edgeRec, multi = false) {
+  for (const item of selectedItems) item.el.classList.remove('selected');
+  selectedItems.clear();
+  if (!multi) clearEdgeSelection();
+  if (edgeRec) {
+    if (multi && selectedEdges.has(edgeRec)) {
+      selectedEdges.delete(edgeRec);
+      edgeRec.pathEl.classList.remove('selected');
+    } else {
+      selectedEdges.add(edgeRec);
+      edgeRec.pathEl.classList.add('selected');
+    }
+  }
+}
+
+function updateEdgesForItems(itemSet) {
+  const seen = new Set();
+  for (const item of itemSet) {
+    const connected = nodeEdgeMap.get(item.id);
+    if (!connected) continue;
+    for (const edgeRec of connected) {
+      if (!seen.has(edgeRec)) { seen.add(edgeRec); updateEdgePath(edgeRec); }
+    }
+  }
+}
+
+function saveEdge(edgeRec) {
+  dbPut('edges', { id: edgeRec.id, tabId: edgeRec.tabId,
+    fromNode: edgeRec.fromNode, fromSide: edgeRec.fromSide,
+    toNode:   edgeRec.toNode,   toSide:   edgeRec.toSide });
+}
+
+function createEdge(fromRec, fromSide, toRec, toSide) {
+  if (fromRec === toRec) return;
+  if (edges.find(e => e.fromNode === fromRec.id && e.toNode === toRec.id &&
+                      e.fromSide === fromSide   && e.toSide === toSide)) return;
+  const edgeRec = { id: ++edgeCounter, tabId: currentTabId,
+    fromNode: fromRec.id, fromSide, toNode: toRec.id, toSide };
+  edges.push(edgeRec);
+  if (!nodeEdgeMap.has(fromRec.id)) nodeEdgeMap.set(fromRec.id, new Set());
+  if (!nodeEdgeMap.has(toRec.id))   nodeEdgeMap.set(toRec.id,   new Set());
+  nodeEdgeMap.get(fromRec.id).add(edgeRec);
+  nodeEdgeMap.get(toRec.id).add(edgeRec);
+  renderEdge(edgeRec);
+  saveEdge(edgeRec);
+}
+
+function removeEdge(edgeRec) {
+  edgeRec.groupEl.remove();
+  edges = edges.filter(e => e !== edgeRec);
+  nodeEdgeMap.get(edgeRec.fromNode)?.delete(edgeRec);
+  nodeEdgeMap.get(edgeRec.toNode)?.delete(edgeRec);
+  selectedEdges.delete(edgeRec);
+  dbDelete('edges', edgeRec.id);
+}
+
+function findDropTarget(clientX, clientY, excludeRecord) {
+  for (const item of items) {
+    if (item === excludeRecord) continue;
+    const r = item.el.getBoundingClientRect();
+    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+      const cx = (clientX - r.left) / r.width;
+      const cy = (clientY - r.top)  / r.height;
+      const dists = { top: cy, bottom: 1 - cy, left: cx, right: 1 - cx };
+      const side = Object.entries(dists).sort(([,a],[,b]) => a - b)[0][0];
+      return { record: item, side };
+    }
+  }
+  return null;
+}
+
+function startEdgeDrag(fromRecord, fromSide, e) {
+  clearSelection();
+  const pid = e.pointerId;
+
+
+  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  preview.setAttribute('class', 'edge-preview');
+  edgeLayer.appendChild(preview);
+
+  const oppSide = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+
+  const onMove = (ev) => {
+    if (ev.pointerId !== pid) return;
+    const vr = viewport.getBoundingClientRect();
+    const cx = (ev.clientX - vr.left - panX) / scale;
+    const cy = (ev.clientY - vr.top  - panY) / scale;
+    const from   = getPortPos(fromRecord, fromSide);
+    const target = findDropTarget(ev.clientX, ev.clientY, fromRecord);
+    const to     = target ? getPortPos(target.record, target.side) : { x: cx, y: cy };
+    const toSide = target ? target.side : oppSide[fromSide];
+    preview.setAttribute('d', edgePathD(from, fromSide, to, toSide));
+  };
+
+  const onUp = (ev) => {
+    if (ev.pointerId !== pid) return;
+    preview.remove();
+    const target = findDropTarget(ev.clientX, ev.clientY, fromRecord);
+    if (target) createEdge(fromRecord, fromSide, target.record, target.side);
+    document.removeEventListener('pointermove',   onMove);
+    document.removeEventListener('pointerup',     onUp);
+    document.removeEventListener('pointercancel', onUp);
+  };
+
+  document.addEventListener('pointermove',   onMove);
+  document.addEventListener('pointerup',     onUp);
+  document.addEventListener('pointercancel', onUp);
 }
 
 // ── Create item ────────────────────────────────────────────────────────────
@@ -560,6 +771,17 @@ function createItem(type, x, y, opts = {}) {
     });
     record._autoGrowLabel = autoGrowLabel;
   }
+  // Port dots for edge connections
+  for (const side of ['top', 'right', 'bottom', 'left']) {
+    const dot = document.createElement('div');
+    dot.className = `port port-${side}`;
+    dot.addEventListener('pointerdown', ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      startEdgeDrag(record, side, ev);
+    });
+    el.appendChild(dot);
+  }
+
   if (!opts.restore) {
     selectItem(record);
     if (type === 'note') {
@@ -575,12 +797,13 @@ let db = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('paste-canvas', 2);
+    const req = indexedDB.open('paste-canvas', 3);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('meta'))  d.createObjectStore('meta',  { keyPath: 'key' });
       if (!d.objectStoreNames.contains('tabs'))  d.createObjectStore('tabs',  { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('edges')) d.createObjectStore('edges', { keyPath: 'id' });
     };
     req.onsuccess = (e) => resolve(e.target.result);
     req.onerror   = (e) => reject(e.target.error);
@@ -654,6 +877,8 @@ function saveViewport() {
 }
 
 function unloadItems() {
+  for (const e of edges) e.groupEl?.remove();
+  edges = []; selectedEdges.clear(); nodeEdgeMap.clear();
   for (const rec of items) {
     if (rec.type === 'img' && rec.contentEl?.src?.startsWith('blob:'))
       URL.revokeObjectURL(rec.contentEl.src);
@@ -692,6 +917,30 @@ async function loadTab(tabId) {
     }
     rec.id = saved.id;
   }
+  // Load edges for this tab
+  edgeLayer.style.visibility = 'hidden';
+  const savedEdges = (await dbGetAll('edges')).filter(e => e.tabId === tabId);
+  if (savedEdges.length) edgeCounter = Math.max(edgeCounter, ...savedEdges.map(e => e.id));
+  for (const saved of savedEdges) {
+    const fromRec = items.find(i => i.id === saved.fromNode);
+    const toRec   = items.find(i => i.id === saved.toNode);
+    if (!fromRec || !toRec) continue;
+    const edgeRec = { id: saved.id, tabId: saved.tabId,
+      fromNode: saved.fromNode, fromSide: saved.fromSide,
+      toNode:   saved.toNode,   toSide:   saved.toSide };
+    edges.push(edgeRec);
+    if (!nodeEdgeMap.has(fromRec.id)) nodeEdgeMap.set(fromRec.id, new Set());
+    if (!nodeEdgeMap.has(toRec.id))   nodeEdgeMap.set(toRec.id,   new Set());
+    nodeEdgeMap.get(fromRec.id).add(edgeRec);
+    nodeEdgeMap.get(toRec.id).add(edgeRec);
+    renderEdge(edgeRec);
+  }
+  // Re-draw edges after layout so offsetWidth/offsetHeight are available
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const e of edges) updateEdgePath(e);
+    edgeLayer.style.visibility = '';
+  }));
+
   // Load viewport — fall back to old 'viewport' key for migration
   let vpMeta = await dbGet('meta', `viewport-${tabId}`);
   if (!vpMeta && tabId === firstTabId) vpMeta = await dbGet('meta', 'viewport');
@@ -791,9 +1040,11 @@ async function deleteTab(tabId) {
 
 async function restoreAll() {
   db = await openDB();
-  // Set itemCounter from all items across all tabs
+  // Set itemCounter and edgeCounter from all stored data
   const allItems = await dbGetAll('items');
   for (const item of allItems) itemCounter = Math.max(itemCounter, item.id);
+  const allEdges = await dbGetAll('edges');
+  for (const edge of allEdges) edgeCounter = Math.max(edgeCounter, edge.id);
 
   let savedTabs = await dbGetAll('tabs');
   if (savedTabs.length === 0) {
@@ -816,6 +1067,9 @@ async function restoreAll() {
 
 // ── Remove ─────────────────────────────────────────────────────────────────
 function removeItem(record) {
+  const connected = nodeEdgeMap.get(record.id);
+  if (connected) { for (const e of [...connected]) removeEdge(e); }
+  nodeEdgeMap.delete(record.id);
   dbDelete('items', record.id);
   if (record.type === 'img' && record.contentEl.src.startsWith('blob:')) {
     URL.revokeObjectURL(record.contentEl.src);
@@ -950,6 +1204,7 @@ function makeDraggable(record) {
       item.x = start.x + dx;
       item.y = start.y + dy;
     }
+    updateEdgesForItems(selectedItems);
   });
 
   el.addEventListener('pointerup', () => {
@@ -1009,7 +1264,7 @@ function makeDraggable(record) {
 
   viewport.addEventListener('pointerup', (e) => {
     if (mode === 'panning') {
-      if (!panMoved) clearSelection();
+      if (!panMoved) { clearSelection(); }
       if (panMoved) saveViewport();
       viewport.style.cursor = 'default';
     } else if (mode === 'marquee') {
@@ -1025,6 +1280,14 @@ function makeDraggable(record) {
           if (ir.right > vr.left + rx1 && ir.left < vr.left + rx2 &&
               ir.bottom > vr.top + ry1 && ir.top < vr.top + ry2) {
             addToSelection(item);
+          }
+        }
+        for (const edge of edges) {
+          const fromItem = items.find(i => i.id === edge.fromNode);
+          const toItem   = items.find(i => i.id === edge.toNode);
+          if (fromItem && toItem && selectedItems.has(fromItem) && selectedItems.has(toItem)) {
+            selectedEdges.add(edge);
+            edge.pathEl.classList.add('selected');
           }
         }
       } else {
@@ -1126,6 +1389,7 @@ document.getElementById('add-tab-btn').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedEdges.size) { for (const e of [...selectedEdges]) removeEdge(e); return; }
     for (const item of [...selectedItems]) removeItem(item);
   }
   if (e.key === 'Escape') {
