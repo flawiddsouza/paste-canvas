@@ -155,8 +155,8 @@
     .item-note .item-inner {
       background: #2b2b1e;
       border: 1px solid #554;
-      min-width: 180px;
-      min-height: 60px;
+      min-width: 250px;
+      min-height: 100px;
     }
 
     .note-handle {
@@ -179,8 +179,8 @@
     .item-note textarea {
       display: block;
       width: 100%;
-      min-width: 180px;
-      min-height: 60px;
+      min-width: 250px;
+      min-height: 100px;
       resize: none;
       background: transparent;
       border: none;
@@ -690,8 +690,8 @@ function createItem(type, x, y, opts = {}) {
       const onMove = (ev) => {
         const dw = (ev.clientX - startX) / scale;
         const dh = (ev.clientY - startY) / scale;
-        contentEl.style.width  = Math.max(180, startW + dw) + 'px';
-        contentEl.style.height = Math.max(60,  startH + dh) + 'px';
+        contentEl.style.width  = Math.max(250, startW + dw) + 'px';
+        contentEl.style.height = Math.max(100, startH + dh) + 'px';
       };
       const onUp = () => {
         saveItem(record);
