@@ -1,0 +1,8 @@
+I want to turn this into a library.
+
+Then we'll be able to have it as a single page static web app that has saving functionality provided by IndexedDB. We'll delink indexedDB from the library. Library will provide adapters for saving and loading data, and the web app will implement those adapters using IndexedDB.
+
+Same library, we'll deploy as Tauri app so people can use it standalone but this app's data will be stored in the file system instead of IndexedDB. Again, we'll implement adapters for saving and loading data, and the Tauri app will implement those adapters using the file system. This app will have a way to save and open a folder like you can open & edit excel documents in excel.
+
+---
+
