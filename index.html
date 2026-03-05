@@ -1636,11 +1636,63 @@ document.getElementById('add-tab-btn').addEventListener('click', () => {
   createTab(`Board ${tabs.length + 1}`);
 });
 
+// ── Duplicate selected items ────────────────────────────────────────────────
+async function duplicateSelected() {
+  if (selectedItems.size === 0) return;
+  const OFFSET = 24;
+  const toClone = [...selectedItems];
+  clearSelection();
+
+  const allSnaps = [];
+  const imgLoadPromises = [];
+
+  for (const item of toClone) {
+    if (item.type === 'note') {
+      const rec = createItem('note', item.x + OFFSET, item.y + OFFSET, { restore: true });
+      rec.contentEl.value = item.contentEl.value;
+      rec.contentEl.style.width  = item.contentEl.offsetWidth  + 'px';
+      rec.contentEl.style.height = item.contentEl.offsetHeight + 'px';
+      saveItem(rec);
+      addToSelection(rec);
+      allSnaps.push(snapItem(rec));
+    } else {
+      const rec = createItem('img', item.x + OFFSET, item.y + OFFSET, { restore: true });
+      rec.contentEl.parentElement.style.width = item.contentEl.parentElement.offsetWidth + 'px';
+      if (item.labelEl && rec.labelEl) rec.labelEl.value = item.labelEl.value;
+      addToSelection(rec);
+      const p = new Promise(resolve => {
+        fetch(item.contentEl.src).then(r => r.blob()).then(blob => {
+          const url = URL.createObjectURL(blob);
+          rec.contentEl.onload = () => {
+            rec.w = rec.el.offsetWidth;
+            rec.h = rec.el.offsetHeight;
+            saveItem(rec);
+            allSnaps.push(snapItem(rec));
+            resolve();
+          };
+          rec.contentEl.src = url;
+        }).catch(resolve);
+      });
+      imgLoadPromises.push(p);
+    }
+  }
+
+  await Promise.all(imgLoadPromises);
+  if (allSnaps.length === 0) return;
+  pushUndo({
+    label: allSnaps.length === 1 ? 'duplicate' : `duplicate ${allSnaps.length} items`,
+    undo()    { for (const s of allSnaps) { const r = items.find(i => i.id === s.id); if (r) removeItem(r, { skipRevoke: true }); } return []; },
+    redo()    { for (const s of allSnaps) restoreItemSnap(s); return allSnaps.map(s => s.id); },
+    dispose() { for (const s of allSnaps) { if (s.blobUrl && !items.find(i => i.id === s.id)) URL.revokeObjectURL(s.blobUrl); } },
+  });
+}
+
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA') return;
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); performUndo(); return; }
   if (e.ctrlKey && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); performRedo(); return; }
+  if (e.ctrlKey && e.key === 'd') { e.preventDefault(); duplicateSelected(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (selectedEdges.size) {
       const snaps = [...selectedEdges].map(snapEdge);
