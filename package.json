@@ -1,0 +1,11 @@
+{
+  "name": "paste-canvas-workspace",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev:web": "bun run --filter @paste-canvas/web dev",
+    "build:lib": "bun run --filter @paste-canvas/lib build",
+    "build:web": "bun run --filter @paste-canvas/web build",
+    "build": "bun run build:lib && bun run build:web"
+  }
+}

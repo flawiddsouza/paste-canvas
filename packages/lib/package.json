@@ -1,0 +1,23 @@
+{
+  "name": "@paste-canvas/lib",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly --outDir dist",
+    "dev": "vite build --watch"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "^5.7.0",
+    "vite-plugin-dts": "^4.0.0"
+  }
+}
