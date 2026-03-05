@@ -1151,6 +1151,7 @@ document.addEventListener('paste', (e) => {
           const off = placeOffset++ * 24;
           const rec = createItem('note', c.x - 90 + off, c.y - 40 + off);
           rec.contentEl.value = text;
+          saveItem(rec);
         });
         handled = true;
         break;
