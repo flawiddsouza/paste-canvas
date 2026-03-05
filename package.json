@@ -6,6 +6,8 @@
     "dev:web": "bun run --filter @paste-canvas/web dev",
     "build:lib": "bun run --filter @paste-canvas/lib build",
     "build:web": "bun run --filter @paste-canvas/web build",
-    "build": "bun run build:lib && bun run build:web"
+    "build": "bun run build:lib && bun run build:web",
+    "dev:tauri": "bun run --filter @paste-canvas/tauri dev",
+    "build:tauri": "bun run build:lib && bun run --filter @paste-canvas/tauri build"
   }
 }

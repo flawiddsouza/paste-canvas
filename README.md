@@ -8,19 +8,21 @@ An infinite canvas for pasting and organizing images and notes.
 |---|---|
 | `@paste-canvas/lib` | Core canvas library — framework-agnostic, storage-agnostic |
 | `@paste-canvas/web` | Static web app using IndexedDB for persistence |
-| `@paste-canvas/tauri` | Desktop app *(planned)* — folder-based workspace |
+| `@paste-canvas/tauri` | Desktop app — folder-based workspace, file-system persistence |
 
 ## Getting started
 
 ```bash
 bun install
 bun run dev:web      # http://localhost:3000
+bun run dev:tauri    # desktop app (requires Rust toolchain)
 ```
 
 ## Building
 
 ```bash
 bun run build        # builds lib then web
+bun run build:tauri  # builds lib then Tauri desktop app
 ```
 
 ## How it works

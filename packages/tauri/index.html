@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paste Canvas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #1a1a1a; }
+
+    #pc-landing {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+    }
+    #pc-landing-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+    }
+    #pc-landing h1 {
+      font-size: 28px;
+      font-weight: 600;
+      color: #e8e8e8;
+      letter-spacing: -0.5px;
+    }
+    #pc-landing p {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    #pc-landing .btn {
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 6px;
+      border: 1px solid #444;
+      cursor: pointer;
+      background: #2a2a2a;
+      color: #e8e8e8;
+      transition: background 0.15s;
+    }
+    #pc-landing .btn:hover { background: #333; }
+  </style>
+</head>
+<body>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
