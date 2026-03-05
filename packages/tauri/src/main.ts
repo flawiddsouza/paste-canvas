@@ -3,6 +3,7 @@ import type { StorageAdapter } from '@paste-canvas/lib';
 import { FsAdapter } from './FsAdapter.js';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 // ── State ─────────────────────────────────────────────────────────────────
 
@@ -60,10 +61,12 @@ function showLanding(): void {
     <div id="pc-landing-card">
       <h1>Paste Canvas</h1>
       <p>Open a folder to start your workspace.<br>A new folder creates a fresh workspace.</p>
-      <button class="btn">Open Folder</button>
+      <button class="btn" id="pc-landing-open">Open Folder</button>
+      <button class="btn" id="pc-landing-new-window">New Window</button>
     </div>
   `;
-  el.querySelector('.btn')!.addEventListener('click', () => void handleOpenFolder());
+  el.querySelector('#pc-landing-open')!.addEventListener('click', () => void handleOpenFolder());
+  el.querySelector('#pc-landing-new-window')!.addEventListener('click', openNewWindow);
   document.body.appendChild(el);
 }
 
@@ -86,7 +89,12 @@ function injectToolbarButtons(): void {
   closeBtn.textContent = 'Close';
   closeBtn.addEventListener('click', () => void handleCloseFolder());
 
-  toolbar.append(sep, openBtn, closeBtn);
+  const newWinBtn = document.createElement('button');
+  newWinBtn.className = 'btn';
+  newWinBtn.textContent = 'New Window';
+  newWinBtn.addEventListener('click', openNewWindow);
+
+  toolbar.append(sep, openBtn, closeBtn, newWinBtn);
 }
 
 // ── Open folder ───────────────────────────────────────────────────────────
@@ -121,6 +129,17 @@ async function handleCloseFolder(): Promise<void> {
   canvasContainer = null;
   void appWindow.setTitle('Paste Canvas');
   showLanding();
+}
+
+// ── New window ────────────────────────────────────────────────────────────
+
+function openNewWindow(): void {
+  new WebviewWindow(`window-${Date.now()}`, {
+    url: '/',
+    title: 'Paste Canvas',
+    width: 1280,
+    height: 800,
+  });
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────
