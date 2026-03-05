@@ -387,6 +387,130 @@ const selectedEdges = new Set();
 let edgeCounter = 0;
 const nodeEdgeMap = new Map(); // Map<itemId, Set<edgeRecord>>
 
+// ========== UNDO / REDO ==========
+const HISTORY_LIMIT = 100;
+let undoStack = [];
+let redoStack = [];
+const tabHistory = new Map(); // Map<tabId, {undoStack, redoStack}>
+
+function pushUndo(cmd) {
+  undoStack.push(cmd);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift().dispose?.();
+  for (const c of redoStack) c.dispose?.();
+  redoStack = [];
+}
+
+function saveTabHistory(tabId) {
+  tabHistory.set(tabId, { undoStack, redoStack });
+}
+
+function restoreTabHistory(tabId) {
+  const h = tabHistory.get(tabId);
+  undoStack = h ? h.undoStack : [];
+  redoStack = h ? h.redoStack : [];
+}
+
+function focusItems(ids) {
+  const recs = ids.map(id => items.find(i => i.id === id)).filter(Boolean);
+  if (!recs.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const rec of recs) {
+    const w = rec.w || rec.el.offsetWidth;
+    const h = rec.h || rec.el.offsetHeight;
+    minX = Math.min(minX, rec.x);     minY = Math.min(minY, rec.y);
+    maxX = Math.max(maxX, rec.x + w); maxY = Math.max(maxY, rec.y + h);
+  }
+  const vr = viewport.getBoundingClientRect();
+  const pad = 48;
+  const vx1 = minX * scale + panX, vy1 = minY * scale + panY;
+  const vx2 = maxX * scale + panX, vy2 = maxY * scale + panY;
+  if (vx1 >= pad && vy1 >= pad && vx2 <= vr.width - pad && vy2 <= vr.height - pad) return;
+  panX = vr.width  / 2 - ((minX + maxX) / 2) * scale;
+  panY = vr.height / 2 - ((minY + maxY) / 2) * scale;
+  applyTransform();
+  saveViewport();
+}
+
+function performUndo() {
+  const cmd = undoStack.pop();
+  if (!cmd) return;
+  const ids = cmd.undo();
+  redoStack.push(cmd);
+  toast('Undone: ' + (cmd.label ?? 'action'));
+  if (ids?.length) focusItems(ids);
+}
+
+function performRedo() {
+  const cmd = redoStack.pop();
+  if (!cmd) return;
+  const ids = cmd.redo();
+  undoStack.push(cmd);
+  toast('Redone: ' + (cmd.label ?? 'action'));
+  if (ids?.length) focusItems(ids);
+}
+
+function snapItem(rec) {
+  return {
+    id: rec.id,
+    type: rec.type,
+    x: rec.x,
+    y: rec.y,
+    w: rec.w,
+    h: rec.h,
+    zIndex: parseInt(rec.el.style.zIndex) || 0,
+    text:          rec.type === 'note' ? rec.contentEl.value                       : undefined,
+    contentWidth:  rec.type === 'note' ? rec.contentEl.offsetWidth                 : undefined,
+    contentHeight: rec.type === 'note' ? rec.contentEl.offsetHeight                : undefined,
+    blobUrl:    rec.type === 'img' ? rec.contentEl.src                             : undefined,
+    imageWidth: rec.type === 'img' ? rec.contentEl.parentElement?.offsetWidth      : undefined,
+    label:      rec.type === 'img' ? (rec.labelEl?.value ?? '')                    : undefined,
+  };
+}
+
+function restoreItemSnap(snap) {
+  const rec = createItem(snap.type, snap.x, snap.y, { id: snap.id, restore: true });
+  rec.el.style.zIndex = snap.zIndex;
+  if (snap.type === 'note') {
+    rec.contentEl.value = snap.text || '';
+    if (snap.contentWidth)  rec.contentEl.style.width  = snap.contentWidth  + 'px';
+    if (snap.contentHeight) rec.contentEl.style.height = snap.contentHeight + 'px';
+  } else {
+    if (snap.w) rec.w = snap.w;
+    if (snap.h) rec.h = snap.h;
+    rec.contentEl.onload = () => {
+      rec.w = rec.el.offsetWidth;
+      rec.h = rec.el.offsetHeight;
+      updateEdgesForItems(new Set([rec]));
+    };
+    rec.contentEl.src = snap.blobUrl;
+    if (snap.imageWidth) rec.contentEl.parentElement.style.width = snap.imageWidth + 'px';
+    if (snap.label && rec.labelEl) rec.labelEl.value = snap.label;
+  }
+  saveItem(rec);
+  return rec;
+}
+
+function snapEdge(er) {
+  return { id: er.id, tabId: er.tabId,
+           fromNode: er.fromNode, fromSide: er.fromSide,
+           toNode:   er.toNode,   toSide:   er.toSide };
+}
+
+function restoreEdgeSnap(snap) {
+  const fromRec = items.find(i => i.id === snap.fromNode);
+  const toRec   = items.find(i => i.id === snap.toNode);
+  if (!fromRec || !toRec) return null;
+  const er = { ...snap };
+  edges.push(er);
+  if (!nodeEdgeMap.has(fromRec.id)) nodeEdgeMap.set(fromRec.id, new Set());
+  if (!nodeEdgeMap.has(toRec.id))   nodeEdgeMap.set(toRec.id,   new Set());
+  nodeEdgeMap.get(fromRec.id).add(er);
+  nodeEdgeMap.get(toRec.id).add(er);
+  renderEdge(er);
+  saveEdge(er);
+  return er;
+}
+
 // ── Transform ──────────────────────────────────────────────────────────────
 function applyTransform() {
   const t = `translate(${panX}px, ${panY}px) scale(${scale})`;
@@ -547,6 +671,12 @@ function createEdge(fromRec, fromSide, toRec, toSide) {
   nodeEdgeMap.get(toRec.id).add(edgeRec);
   renderEdge(edgeRec);
   saveEdge(edgeRec);
+  const snap = snapEdge(edgeRec);
+  pushUndo({
+    label: 'connect',
+    undo() { const er = edges.find(e => e.id === snap.id); if (er) removeEdge(er); return [snap.fromNode, snap.toNode]; },
+    redo() { restoreEdgeSnap(snap); return [snap.fromNode, snap.toNode]; },
+  });
 }
 
 function removeEdge(edgeRec) {
@@ -611,7 +741,8 @@ function startEdgeDrag(fromRecord, fromSide, e) {
 
 // ── Create item ────────────────────────────────────────────────────────────
 function createItem(type, x, y, opts = {}) {
-  const id = ++itemCounter;
+  const id = opts.id != null ? opts.id : ++itemCounter;
+  if (opts.id != null) itemCounter = Math.max(itemCounter, opts.id);
   const el = document.createElement('div');
   el.className = `item item-${type}`;
   el.style.left = x + 'px';
@@ -653,8 +784,17 @@ function createItem(type, x, y, opts = {}) {
         inner.style.width = Math.max(80, startW + dw) + 'px';
       };
       const onUp = () => {
+        const endW = inner.offsetWidth;
         saveItem(record);
         updateEdgesForItems(new Set([record]));
+        if (endW !== startW) {
+          const itemId = record.id;
+          pushUndo({
+            label: 'resize',
+            undo() { const r = items.find(i => i.id === itemId); if (!r) return []; r.contentEl.parentElement.style.width = startW + 'px'; saveItem(r); updateEdgesForItems(new Set([r])); return [itemId]; },
+            redo() { const r = items.find(i => i.id === itemId); if (!r) return []; r.contentEl.parentElement.style.width = endW   + 'px'; saveItem(r); updateEdgesForItems(new Set([r])); return [itemId]; },
+          });
+        }
         rh.removeEventListener('pointermove',   onMove);
         rh.removeEventListener('pointerup',     onUp);
         rh.removeEventListener('pointercancel', onUp);
@@ -694,8 +834,18 @@ function createItem(type, x, y, opts = {}) {
         contentEl.style.height = Math.max(100, startH + dh) + 'px';
       };
       const onUp = () => {
+        const endW = contentEl.offsetWidth;
+        const endH = contentEl.offsetHeight;
         saveItem(record);
         updateEdgesForItems(new Set([record]));
+        if (endW !== startW || endH !== startH) {
+          const itemId = record.id;
+          pushUndo({
+            label: 'resize',
+            undo() { const r = items.find(i => i.id === itemId); if (!r) return []; r.contentEl.style.width = startW + 'px'; r.contentEl.style.height = startH + 'px'; saveItem(r); updateEdgesForItems(new Set([r])); return [itemId]; },
+            redo() { const r = items.find(i => i.id === itemId); if (!r) return []; r.contentEl.style.width = endW   + 'px'; r.contentEl.style.height = endH   + 'px'; saveItem(r); updateEdgesForItems(new Set([r])); return [itemId]; },
+          });
+        }
         rh.removeEventListener('pointermove',   onMove);
         rh.removeEventListener('pointerup',     onUp);
         rh.removeEventListener('pointercancel', onUp);
@@ -735,7 +885,18 @@ function createItem(type, x, y, opts = {}) {
   const delBtn = document.createElement('button');
   delBtn.className = 'item-btn danger';
   delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', (e) => { e.stopPropagation(); removeItem(record); });
+  delBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const snap = snapItem(record);
+    const edgeSnaps = [...(nodeEdgeMap.get(record.id) ?? [])].map(snapEdge);
+    removeItem(record, { skipRevoke: true });
+    pushUndo({
+      label: 'delete ' + (snap.type === 'img' ? 'image' : 'note'),
+      undo() { restoreItemSnap(snap); for (const es of edgeSnaps) restoreEdgeSnap(es); return [snap.id]; },
+      redo() { const r = items.find(i => i.id === snap.id); if (r) removeItem(r, { skipRevoke: true }); return []; },
+      dispose() { if (snap.blobUrl && !items.find(i => i.id === snap.id)) URL.revokeObjectURL(snap.blobUrl); },
+    });
+  });
   itb.appendChild(delBtn);
 
   el.appendChild(itb);
@@ -880,11 +1041,12 @@ function saveViewport() {
   }, 500);
 }
 
-function unloadItems() {
+function unloadItems(protectedBlobs = new Set()) {
   for (const e of edges) e.groupEl?.remove();
   edges = []; selectedEdges.clear(); nodeEdgeMap.clear();
   for (const rec of items) {
-    if (rec.type === 'img' && rec.contentEl?.src?.startsWith('blob:'))
+    if (rec.type === 'img' && rec.contentEl?.src?.startsWith('blob:') &&
+        !protectedBlobs.has(rec.contentEl.src))
       URL.revokeObjectURL(rec.contentEl.src);
     rec.el.remove();
   }
@@ -1013,11 +1175,17 @@ async function switchTab(tabId) {
   placeOffset = 0;
   clearTimeout(vpSaveTimer);
   dbPut('meta', { key: `viewport-${currentTabId}`, panX, panY, scale });
-  unloadItems();
+  saveTabHistory(currentTabId);
+  const protectedBlobs = new Set();
+  for (const cmd of [...undoStack, ...redoStack]) {
+    if (cmd._blobUrl) protectedBlobs.add(cmd._blobUrl);
+  }
+  unloadItems(protectedBlobs);
   currentTabId = tabId;
   dbPut('meta', { key: 'activeTab', tabId });
   renderTabBar();
   await loadTab(tabId);
+  restoreTabHistory(tabId);
 }
 
 async function createTab(name) {
@@ -1039,6 +1207,11 @@ async function deleteTab(tabId) {
   }
   dbDelete('meta', `viewport-${tabId}`);
   dbDelete('tabs', tabId);
+  const oldHistory = tabHistory.get(tabId);
+  if (oldHistory) {
+    for (const c of [...oldHistory.undoStack, ...oldHistory.redoStack]) c.dispose?.();
+    tabHistory.delete(tabId);
+  }
   tabs = tabs.filter(t => t.id !== tabId);
   renderTabBar();
 }
@@ -1071,12 +1244,12 @@ async function restoreAll() {
 }
 
 // ── Remove ─────────────────────────────────────────────────────────────────
-function removeItem(record) {
+function removeItem(record, { skipRevoke = false } = {}) {
   const connected = nodeEdgeMap.get(record.id);
   if (connected) { for (const e of [...connected]) removeEdge(e); }
   nodeEdgeMap.delete(record.id);
   dbDelete('items', record.id);
-  if (record.type === 'img' && record.contentEl.src.startsWith('blob:')) {
+  if (!skipRevoke && record.type === 'img' && record.contentEl.src.startsWith('blob:')) {
     URL.revokeObjectURL(record.contentEl.src);
   }
   record.el.remove();
@@ -1120,9 +1293,19 @@ function placeImage(url) {
   rec.contentEl.onload = () => {
     const w = rec.contentEl.naturalWidth;
     rec.contentEl.parentElement.style.width = w + 'px';
-    rec.el.style.left = (c.x - w / 2) + 'px';
-    rec.el.style.top  = (c.y - rec.contentEl.naturalHeight / 2) + 'px';
+    rec.x = c.x - w / 2;
+    rec.y = c.y - rec.contentEl.naturalHeight / 2;
+    rec.el.style.left = rec.x + 'px';
+    rec.el.style.top  = rec.y + 'px';
     saveItem(rec);
+    const snap = snapItem(rec);
+    pushUndo({
+      label: 'create image',
+      _blobUrl: snap.blobUrl,
+      undo() { const r = items.find(i => i.id === snap.id); if (r) removeItem(r, { skipRevoke: true }); return []; },
+      redo() { restoreItemSnap(snap); return [snap.id]; },
+      dispose() { if (!items.find(i => i.id === snap.id)) URL.revokeObjectURL(snap.blobUrl); },
+    });
   };
   rec.contentEl.src = url;
 }
@@ -1152,6 +1335,12 @@ document.addEventListener('paste', (e) => {
           const rec = createItem('note', c.x - 90 + off, c.y - 40 + off);
           rec.contentEl.value = text;
           saveItem(rec);
+          const snap = snapItem(rec);
+          pushUndo({
+            label: 'create note',
+            undo() { const r = items.find(i => i.id === snap.id); if (r) removeItem(r); return []; },
+            redo() { restoreItemSnap(snap); return [snap.id]; },
+          });
         });
         handled = true;
         break;
@@ -1166,6 +1355,7 @@ function makeDraggable(record) {
   let dragging = false;
   let startCanvasX, startCanvasY;
   let startPositions; // Map<item, {x, y}>
+  let beforeDrag;     // Map<itemId, {x, y}> for undo
 
   el.addEventListener('pointerdown', (e) => {
     if (e.target.tagName === 'TEXTAREA' ||
@@ -1189,11 +1379,12 @@ function makeDraggable(record) {
     startCanvasX = (e.clientX - vr.left - panX) / scale;
     startCanvasY = (e.clientY - vr.top  - panY) / scale;
     startPositions = new Map();
+    beforeDrag = new Map();
     for (const item of selectedItems) {
-      startPositions.set(item, {
-        x: parseFloat(item.el.style.left) || 0,
-        y: parseFloat(item.el.style.top)  || 0,
-      });
+      const sx = parseFloat(item.el.style.left) || 0;
+      const sy = parseFloat(item.el.style.top)  || 0;
+      startPositions.set(item, { x: sx, y: sy });
+      beforeDrag.set(item.id, { x: sx, y: sy });
     }
   });
 
@@ -1217,6 +1408,30 @@ function makeDraggable(record) {
     if (!dragging) return;
     dragging = false;
     for (const item of selectedItems) saveItem(item);
+    const afterDrag = new Map();
+    let hasMoved = false;
+    for (const item of selectedItems) {
+      const before = beforeDrag.get(item.id);
+      afterDrag.set(item.id, { x: item.x, y: item.y });
+      if (before && (before.x !== item.x || before.y !== item.y)) hasMoved = true;
+    }
+    if (hasMoved) {
+      const bd = new Map(beforeDrag);
+      const ad = new Map(afterDrag);
+      pushUndo({
+        label: 'move',
+        undo() {
+          for (const [id, pos] of bd) { const r = items.find(i => i.id === id); if (!r) continue; r.x = pos.x; r.y = pos.y; r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px'; saveItem(r); }
+          updateEdgesForItems(new Set(items.filter(i => bd.has(i.id))));
+          return [...bd.keys()];
+        },
+        redo() {
+          for (const [id, pos] of ad) { const r = items.find(i => i.id === id); if (!r) continue; r.x = pos.x; r.y = pos.y; r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px'; saveItem(r); }
+          updateEdgesForItems(new Set(items.filter(i => ad.has(i.id))));
+          return [...ad.keys()];
+        },
+      });
+    }
   });
 
   el.addEventListener('pointercancel', () => { dragging = false; });
@@ -1353,7 +1568,13 @@ viewport.addEventListener('wheel', (e) => {
 document.getElementById('btn-note').addEventListener('click', () => {
   const c = viewportCenter();
   const off = placeOffset++ * 24;
-  createItem('note', c.x - 90 + off, c.y - 40 + off);
+  const rec = createItem('note', c.x - 90 + off, c.y - 40 + off);
+  const snap = snapItem(rec);
+  pushUndo({
+    label: 'create note',
+    undo() { const r = items.find(i => i.id === snap.id); if (r) removeItem(r); return []; },
+    redo() { restoreItemSnap(snap); return [snap.id]; },
+  });
 });
 
 document.getElementById('btn-paste-img').addEventListener('click', async () => {
@@ -1377,8 +1598,32 @@ document.getElementById('btn-clear-sel').addEventListener('click', () => {
 });
 
 document.getElementById('btn-delete-sel').addEventListener('click', () => {
-  if (selectedItems.size === 0) { toast('No item selected'); return; }
-  for (const item of [...selectedItems]) removeItem(item);
+  if (selectedItems.size === 0 && selectedEdges.size === 0) { toast('No item selected'); return; }
+  if (selectedEdges.size) {
+    const snaps = [...selectedEdges].map(snapEdge);
+    for (const er of [...selectedEdges]) removeEdge(er);
+    pushUndo({
+      label: snaps.length === 1 ? 'disconnect' : `disconnect ${snaps.length}`,
+      undo() { for (const s of snaps) restoreEdgeSnap(s); return [...new Set(snaps.flatMap(s => [s.fromNode, s.toNode]))]; },
+      redo() { for (const s of snaps) { const er = edges.find(e => e.id === s.id); if (er) removeEdge(er); } return []; },
+    });
+    return;
+  }
+  const snaps = [...selectedItems].map(snapItem);
+  const edgeSnapMap = new Map();
+  for (const item of selectedItems) {
+    for (const er of (nodeEdgeMap.get(item.id) ?? [])) {
+      if (!edgeSnapMap.has(er.id)) edgeSnapMap.set(er.id, snapEdge(er));
+    }
+  }
+  const edgeSnaps = [...edgeSnapMap.values()];
+  for (const item of [...selectedItems]) removeItem(item, { skipRevoke: true });
+  pushUndo({
+    label: snaps.length === 1 ? 'delete ' + (snaps[0].type === 'img' ? 'image' : 'note') : `delete ${snaps.length} items`,
+    undo() { for (const s of snaps) restoreItemSnap(s); for (const es of edgeSnaps) restoreEdgeSnap(es); return snaps.map(s => s.id); },
+    redo() { for (const s of snaps) { const r = items.find(i => i.id === s.id); if (r) removeItem(r, { skipRevoke: true }); } return []; },
+    dispose() { for (const s of snaps) { if (s.blobUrl && !items.find(i => i.id === s.id)) URL.revokeObjectURL(s.blobUrl); } },
+  });
 });
 
 document.getElementById('btn-reset-view').addEventListener('click', () => {
@@ -1394,9 +1639,36 @@ document.getElementById('add-tab-btn').addEventListener('click', () => {
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA') return;
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); performUndo(); return; }
+  if (e.ctrlKey && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); performRedo(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selectedEdges.size) { for (const e of [...selectedEdges]) removeEdge(e); return; }
-    for (const item of [...selectedItems]) removeItem(item);
+    if (selectedEdges.size) {
+      const snaps = [...selectedEdges].map(snapEdge);
+      for (const er of [...selectedEdges]) removeEdge(er);
+      pushUndo({
+        label: snaps.length === 1 ? 'disconnect' : `disconnect ${snaps.length}`,
+        undo() { for (const s of snaps) restoreEdgeSnap(s); return [...new Set(snaps.flatMap(s => [s.fromNode, s.toNode]))]; },
+        redo() { for (const s of snaps) { const er = edges.find(e => e.id === s.id); if (er) removeEdge(er); } return []; },
+      });
+      return;
+    }
+    if (selectedItems.size) {
+      const snaps = [...selectedItems].map(snapItem);
+      const edgeSnapMap = new Map();
+      for (const item of selectedItems) {
+        for (const er of (nodeEdgeMap.get(item.id) ?? [])) {
+          if (!edgeSnapMap.has(er.id)) edgeSnapMap.set(er.id, snapEdge(er));
+        }
+      }
+      const edgeSnaps = [...edgeSnapMap.values()];
+      for (const item of [...selectedItems]) removeItem(item, { skipRevoke: true });
+      pushUndo({
+        label: snaps.length === 1 ? 'delete ' + (snaps[0].type === 'img' ? 'image' : 'note') : `delete ${snaps.length} items`,
+        undo() { for (const s of snaps) restoreItemSnap(s); for (const es of edgeSnaps) restoreEdgeSnap(es); return snaps.map(s => s.id); },
+        redo() { for (const s of snaps) { const r = items.find(i => i.id === s.id); if (r) removeItem(r, { skipRevoke: true }); } return []; },
+        dispose() { for (const s of snaps) { if (s.blobUrl && !items.find(i => i.id === s.id)) URL.revokeObjectURL(s.blobUrl); } },
+      });
+    }
   }
   if (e.key === 'Escape') {
     clearSelection();
