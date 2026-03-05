@@ -1692,6 +1692,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA') return;
   if (e.ctrlKey && e.key === 'z') { e.preventDefault(); performUndo(); return; }
   if (e.ctrlKey && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); performRedo(); return; }
+  if (e.ctrlKey && e.key === 'a') { e.preventDefault(); clearSelection(); for (const item of items) addToSelection(item); return; }
   if (e.ctrlKey && e.key === 'd') { e.preventDefault(); duplicateSelected(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (selectedEdges.size) {
