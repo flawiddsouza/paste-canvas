@@ -12,6 +12,8 @@
     "store:allow-save",
     "store:allow-delete",
     "store:allow-load",
+    "window-state:allow-restore-state",
+    "window-state:allow-save-window-state",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "fs:allow-read-file",

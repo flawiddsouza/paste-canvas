@@ -6,6 +6,7 @@ import { watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { load as loadStore } from '@tauri-apps/plugin-store';
+import { restoreStateCurrent, saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 
 // ── State ─────────────────────────────────────────────────────────────────
 
@@ -217,6 +218,10 @@ function openNewWindow(): void {
 // ── Boot ──────────────────────────────────────────────────────────────────
 
 const isNewWindow = new URLSearchParams(window.location.search).has('new');
+
+if (!isNewWindow) {
+  void restoreStateCurrent(StateFlags.ALL);
+}
 
 if (isNewWindow) {
   showLanding();
