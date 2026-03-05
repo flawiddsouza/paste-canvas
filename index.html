@@ -427,7 +427,6 @@ function clearSelection() {
   clearEdgeSelection();
 }
 function addToSelection(item) {
-  clearEdgeSelection();
   selectedItems.add(item);
   item.el.classList.add('selected');
   item.el.style.zIndex = ++itemCounter;
@@ -441,6 +440,7 @@ function toggleSelection(item) {
     selectedItems.delete(item);
     item.el.classList.remove('selected');
   } else {
+    clearEdgeSelection();
     addToSelection(item);
   }
 }
@@ -1288,9 +1288,9 @@ function makeDraggable(record) {
           }
         }
         for (const edge of edges) {
-          const fromItem = items.find(i => i.id === edge.fromNode);
-          const toItem   = items.find(i => i.id === edge.toNode);
-          if (fromItem && toItem && selectedItems.has(fromItem) && selectedItems.has(toItem)) {
+          const bbox = edge.pathEl.getBoundingClientRect();
+          if (bbox.right  > vr.left + rx1 && bbox.left   < vr.left + rx2 &&
+              bbox.bottom > vr.top  + ry1 && bbox.top    < vr.top  + ry2) {
             selectedEdges.add(edge);
             edge.pathEl.classList.add('selected');
           }
