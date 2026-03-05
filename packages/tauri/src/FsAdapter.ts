@@ -35,6 +35,7 @@ export class FsAdapter implements StorageAdapter {
   private constructor(
     private readonly folder: string,
     private readonly onDirty: () => void,
+    private readonly onWrite: () => void,
   ) {}
 
   // ── Paths ─────────────────────────────────────────────────────────────
@@ -46,8 +47,8 @@ export class FsAdapter implements StorageAdapter {
 
   // ── Static factory ────────────────────────────────────────────────────
 
-  static async open(folder: string, onDirty: () => void): Promise<FsAdapter> {
-    const a = new FsAdapter(folder, onDirty);
+  static async open(folder: string, onDirty: () => void, onWrite: () => void): Promise<FsAdapter> {
+    const a = new FsAdapter(folder, onDirty, onWrite);
 
     const imagesDir = `${folder}/images`;
     if (!(await exists(imagesDir))) await mkdir(imagesDir, { recursive: true });
@@ -81,6 +82,7 @@ export class FsAdapter implements StorageAdapter {
   // ── Flush helpers ─────────────────────────────────────────────────────
 
   private async flushWorkspace(): Promise<void> {
+    this.onWrite();
     const ws: WorkspaceFile = {
       version: 1,
       tabs: [...this.tabs.values()],
@@ -90,12 +92,14 @@ export class FsAdapter implements StorageAdapter {
   }
 
   private async flushBoard(tabId: number): Promise<void> {
+    this.onWrite();
     const items = [...this.items.values()].filter(i => i.tabId === tabId);
     const edges = [...this.edges.values()].filter(e => e.tabId === tabId);
     await writeTextFile(this.boardPath(tabId), JSON.stringify({ items, edges } satisfies BoardFile, null, 2));
   }
 
   private async flushViewports(): Promise<void> {
+    this.onWrite();
     await writeTextFile(this.vpPath(), JSON.stringify(this.viewports, null, 2));
   }
 
@@ -112,6 +116,7 @@ export class FsAdapter implements StorageAdapter {
   async putItem(item: ItemData): Promise<void> {
     const { imageData, ...rest } = item;
     if (item.type === 'img' && imageData) {
+      this.onWrite();
       await writeFile(this.imgPath(item.id), new Uint8Array(imageData));
     }
     this.items.set(item.id, rest);
@@ -123,6 +128,7 @@ export class FsAdapter implements StorageAdapter {
     const item = this.items.get(id);
     if (!item) return;
     this.items.delete(id);
+    this.onWrite();
     const ip = this.imgPath(id);
     if (await exists(ip)) await remove(ip);
     await this.flushBoard(item.tabId);
@@ -158,6 +164,7 @@ export class FsAdapter implements StorageAdapter {
 
   async deleteTab(id: number): Promise<void> {
     this.tabs.delete(id);
+    this.onWrite();
     const bp = this.boardPath(id);
     if (await exists(bp)) await remove(bp);
     await this.flushWorkspace();

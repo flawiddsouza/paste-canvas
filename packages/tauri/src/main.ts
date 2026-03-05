@@ -2,6 +2,7 @@ import { createCanvas, PasteCanvas } from '@paste-canvas/lib';
 import type { StorageAdapter } from '@paste-canvas/lib';
 import { FsAdapter } from './FsAdapter.js';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+import { watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
@@ -11,15 +12,52 @@ const appWindow = getCurrentWindow();
 let canvas: PasteCanvas | null = null;
 let canvasContainer: HTMLDivElement | null = null;
 let fsAdapter: FsAdapter | null = null;
-let folderName: string | null = null;
+let folderPath: string | null = null;   // full path
+let folderName: string | null = null;   // display name (last segment)
 let isDirty = false;
 let dirtyTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 500;
+
+// ── Folder watcher ────────────────────────────────────────────────────────
+
+let unwatchFn: UnwatchFn | null = null;
+let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+let writeLockUntil = 0;  // suppress watcher events during our own writes
+
+async function startWatching(folder: string): Promise<void> {
+  await stopWatching();
+  unwatchFn = await watch(folder, () => {
+    if (Date.now() < writeLockUntil) return;
+    if (reloadTimer !== null) clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      reloadTimer = null;
+      if (Date.now() < writeLockUntil) return; // re-check: lock may have been set since event fired
+      void reloadFolder();
+    }, 400);
+  }, { recursive: true, delayMs: 0 });
+}
+
+async function stopWatching(): Promise<void> {
+  if (unwatchFn) { await unwatchFn(); unwatchFn = null; }
+  if (reloadTimer !== null) { clearTimeout(reloadTimer); reloadTimer = null; }
+}
+
+async function reloadFolder(): Promise<void> {
+  if (!folderPath) return;
+  const path = folderPath;
+  fsAdapter = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; });
+  isDirty   = false;
+  mountCanvas(fsAdapter);
+  updateTitle();
+  await startWatching(path);
+  writeLockUntil = Date.now() + 1000; // suppress buffered OS events after watcher restart
+}
 
 // ── Dirty / title management ──────────────────────────────────────────────
 
 function markDirty(): void {
   isDirty = true;
+  writeLockUntil = Date.now() + 3000; // suppress watcher during pending + in-progress write
   updateTitle();
   if (dirtyTimer !== null) clearTimeout(dirtyTimer);
   dirtyTimer = setTimeout(() => { dirtyTimer = null; void flush(); }, DEBOUNCE_MS);
@@ -37,7 +75,9 @@ function updateTitle(): void {
 
 async function flush(): Promise<void> {
   if (!fsAdapter) return;
+  writeLockUntil = Date.now() + 3000;
   await fsAdapter.flushAll();
+  writeLockUntil = Date.now() + 1000; // 1s cooldown after write completes
   markClean();
 }
 
@@ -108,21 +148,25 @@ async function handleOpenFolder(): Promise<void> {
     await fsAdapter.flushAll();
   }
 
-  fsAdapter  = await FsAdapter.open(selected, markDirty);
+  fsAdapter  = await FsAdapter.open(selected, markDirty, () => { writeLockUntil = Date.now() + 1500; });
+  folderPath = selected;
   folderName = selected.split(/[\\/]/).pop() ?? selected;
   isDirty    = false;
 
   document.getElementById('pc-landing')?.remove();
   mountCanvas(fsAdapter);
   updateTitle();
+  await startWatching(selected);
 }
 
 // ── Close folder ──────────────────────────────────────────────────────────
 
 async function handleCloseFolder(): Promise<void> {
+  await stopWatching();
   if (dirtyTimer !== null) { clearTimeout(dirtyTimer); dirtyTimer = null; }
   await flush();
   fsAdapter  = null;
+  folderPath = null;
   folderName = null;
   canvas?.destroy();
   canvas = null;
