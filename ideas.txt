@@ -2,4 +2,3 @@ We want the paste canvas to handle 1000s of images. We don't want it to lag. We 
 
 ---
 
-tauri desktop app > remember last opened folder - but when a second window is opened it should be empty

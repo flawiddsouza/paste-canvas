@@ -5,6 +5,7 @@ import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 import { watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { load as loadStore } from '@tauri-apps/plugin-store';
 
 // ── State ─────────────────────────────────────────────────────────────────
 
@@ -137,26 +138,52 @@ function injectToolbarButtons(): void {
   toolbar.append(sep, openBtn, closeBtn, newWinBtn);
 }
 
+// ── Persistence ───────────────────────────────────────────────────────────
+
+const STORE_FILE = 'settings.json';
+const LAST_FOLDER_KEY = 'lastFolder';
+
+async function saveLastFolder(path: string): Promise<void> {
+  const store = await loadStore(STORE_FILE);
+  await store.set(LAST_FOLDER_KEY, path);
+  await store.save();
+}
+
+async function clearLastFolder(): Promise<void> {
+  const store = await loadStore(STORE_FILE);
+  await store.delete(LAST_FOLDER_KEY);
+  await store.save();
+}
+
+async function getLastFolder(): Promise<string | null> {
+  const store = await loadStore(STORE_FILE);
+  return (await store.get<string>(LAST_FOLDER_KEY)) ?? null;
+}
+
 // ── Open folder ───────────────────────────────────────────────────────────
 
-async function handleOpenFolder(): Promise<void> {
-  const selected = await dialogOpen({ directory: true, multiple: false, title: 'Open Workspace Folder' });
-  if (!selected || typeof selected !== 'string') return;
-
+async function openFolder(path: string): Promise<void> {
   if (fsAdapter) {
     if (dirtyTimer !== null) { clearTimeout(dirtyTimer); dirtyTimer = null; }
     await fsAdapter.flushAll();
   }
 
-  fsAdapter  = await FsAdapter.open(selected, markDirty, () => { writeLockUntil = Date.now() + 1500; });
-  folderPath = selected;
-  folderName = selected.split(/[\\/]/).pop() ?? selected;
+  fsAdapter  = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; });
+  folderPath = path;
+  folderName = path.split(/[\\/]/).pop() ?? path;
   isDirty    = false;
 
+  void saveLastFolder(path);
   document.getElementById('pc-landing')?.remove();
   mountCanvas(fsAdapter);
   updateTitle();
-  await startWatching(selected);
+  await startWatching(path);
+}
+
+async function handleOpenFolder(): Promise<void> {
+  const selected = await dialogOpen({ directory: true, multiple: false, title: 'Open Workspace Folder' });
+  if (!selected || typeof selected !== 'string') return;
+  await openFolder(selected);
 }
 
 // ── Close folder ──────────────────────────────────────────────────────────
@@ -171,6 +198,7 @@ async function handleCloseFolder(): Promise<void> {
   canvas?.destroy();
   canvas = null;
   canvasContainer = null;
+  await clearLastFolder();
   void appWindow.setTitle('Paste Canvas');
   showLanding();
 }
@@ -179,7 +207,7 @@ async function handleCloseFolder(): Promise<void> {
 
 function openNewWindow(): void {
   new WebviewWindow(`window-${Date.now()}`, {
-    url: '/',
+    url: '/?new=1',
     title: 'Paste Canvas',
     width: 1280,
     height: 800,
@@ -188,4 +216,20 @@ function openNewWindow(): void {
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 
-showLanding();
+const isNewWindow = new URLSearchParams(window.location.search).has('new');
+
+if (isNewWindow) {
+  showLanding();
+} else {
+  getLastFolder().then(lastFolder => {
+    if (lastFolder) {
+      return openFolder(lastFolder).catch(() => {
+        // Folder no longer accessible; fall back to landing
+        void clearLastFolder();
+        showLanding();
+      });
+    } else {
+      showLanding();
+    }
+  }).catch(() => showLanding());
+}
