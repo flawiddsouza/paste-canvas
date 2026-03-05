@@ -1056,9 +1056,16 @@ function unloadItems(protectedBlobs = new Set()) {
 }
 
 async function loadTab(tabId) {
-  const allItems = await dbGetAll('items');
-  // Items with no tabId are legacy data — migrate them to the first tab
+  // Apply saved viewport before rendering items to avoid flash of movement
   const firstTabId = tabs[0]?.id;
+  let vpMeta = await dbGet('meta', `viewport-${tabId}`);
+  if (!vpMeta && tabId === firstTabId) vpMeta = await dbGet('meta', 'viewport');
+  panX = vpMeta?.panX ?? 0;
+  panY = vpMeta?.panY ?? 0;
+  scale = vpMeta?.scale ?? 1;
+  applyTransform();
+
+  const allItems = await dbGetAll('items');
   const tabItems = allItems.filter(s =>
     s.tabId === tabId || (s.tabId === undefined && tabId === firstTabId)
   );
@@ -1109,13 +1116,6 @@ async function loadTab(tabId) {
     renderEdge(edgeRec);
   }
 
-  // Load viewport — fall back to old 'viewport' key for migration
-  let vpMeta = await dbGet('meta', `viewport-${tabId}`);
-  if (!vpMeta && tabId === firstTabId) vpMeta = await dbGet('meta', 'viewport');
-  panX = vpMeta?.panX ?? 0;
-  panY = vpMeta?.panY ?? 0;
-  scale = vpMeta?.scale ?? 1;
-  applyTransform();
 }
 
 function renderTabBar() {
