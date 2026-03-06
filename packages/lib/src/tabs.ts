@@ -205,7 +205,7 @@ export async function deleteTab(ctx: Ctx, tabId: number): Promise<void> {
 
 export async function restoreAll(ctx: Ctx): Promise<void> {
   const allItems = await ctx.adapter.getAllItems();
-  for (const item of allItems) ctx.itemCounter = Math.max(ctx.itemCounter, item.id);
+  for (const item of allItems) ctx.itemCounter = Math.max(ctx.itemCounter, item.id, item.zIndex ?? 0);
   const allEdges = await ctx.adapter.getAllEdges();
   for (const edge of allEdges) ctx.edgeCounter = Math.max(ctx.edgeCounter, edge.id);
 
