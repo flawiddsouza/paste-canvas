@@ -5,3 +5,8 @@ We want the paste canvas to handle 1000s of images. We don't want it to lag. We 
 Our currently incrementing ids are recipe for conflict if we introduce sync 
 
 I think images are also incremented bins?
+
+--
+
+edges don't rerender in realtime when resizing items - they rerender once it's over - it doesn't look great
+

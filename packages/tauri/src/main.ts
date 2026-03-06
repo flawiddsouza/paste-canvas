@@ -18,6 +18,7 @@ let folderPath: string | null = null;   // full path
 let folderName: string | null = null;   // display name (last segment)
 let isDirty = false;
 let dirtyTimer: ReturnType<typeof setTimeout> | null = null;
+let navSaveTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 500;
 
 // ── Folder watcher ────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ async function stopWatching(): Promise<void> {
 async function reloadFolder(): Promise<void> {
   if (!folderPath) return;
   const path = folderPath;
-  fsAdapter = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; });
+  fsAdapter = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; }, flashSaveIndicator);
   isDirty   = false;
   mountCanvas(fsAdapter);
   updateTitle();
@@ -70,9 +71,20 @@ function markClean(): void {
   updateTitle();
 }
 
+function flashSaveIndicator(): void {
+  if (isDirty) return; // content indicator already showing, don't interfere
+  if (navSaveTimer !== null) clearTimeout(navSaveTimer);
+  isDirty = true;
+  updateTitle();
+  navSaveTimer = setTimeout(() => {
+    navSaveTimer = null;
+    if (dirtyTimer === null) { isDirty = false; updateTitle(); }
+  }, 800);
+}
+
 function updateTitle(): void {
   const base = folderName ? `${folderName} — Paste Canvas` : 'Paste Canvas';
-  void appWindow.setTitle(isDirty ? `• ${base}` : base);
+  void appWindow.setTitle(isDirty ? `${base} •` : base);
 }
 
 async function flush(): Promise<void> {
@@ -169,7 +181,7 @@ async function openFolder(path: string): Promise<void> {
     await fsAdapter.flushAll();
   }
 
-  fsAdapter  = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; });
+  fsAdapter  = await FsAdapter.open(path, markDirty, () => { writeLockUntil = Date.now() + 1500; }, flashSaveIndicator);
   folderPath = path;
   folderName = path.split(/[\\/]/).pop() ?? path;
   isDirty    = false;

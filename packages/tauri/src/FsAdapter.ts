@@ -36,6 +36,7 @@ export class FsAdapter implements StorageAdapter {
     private readonly folder: string,
     private readonly onDirty: () => void,
     private readonly onWrite: () => void,
+    private readonly onNavSave: () => void,
   ) {}
 
   // ── Paths ─────────────────────────────────────────────────────────────
@@ -47,8 +48,8 @@ export class FsAdapter implements StorageAdapter {
 
   // ── Static factory ────────────────────────────────────────────────────
 
-  static async open(folder: string, onDirty: () => void, onWrite: () => void): Promise<FsAdapter> {
-    const a = new FsAdapter(folder, onDirty, onWrite);
+  static async open(folder: string, onDirty: () => void, onWrite: () => void, onNavSave: () => void): Promise<FsAdapter> {
+    const a = new FsAdapter(folder, onDirty, onWrite, onNavSave);
 
     const imagesDir = `${folder}/images`;
     if (!(await exists(imagesDir))) await mkdir(imagesDir, { recursive: true });
@@ -200,7 +201,7 @@ export class FsAdapter implements StorageAdapter {
   async saveViewport(tabId: number, state: ViewportState): Promise<void> {
     this.viewports[String(tabId)] = state;
     await this.flushViewports();
-    // No onDirty: viewport is navigation state, not content
+    this.onNavSave();
   }
 
   async loadViewport(tabId: number): Promise<ViewportState | null> {
@@ -210,7 +211,7 @@ export class FsAdapter implements StorageAdapter {
   async saveActiveTab(tabId: number): Promise<void> {
     this.activeTabId = tabId;
     await this.flushWorkspace();
-    // No onDirty: active tab is navigation state, not content
+    this.onNavSave();
   }
 
   async loadActiveTab(): Promise<number | null> {
