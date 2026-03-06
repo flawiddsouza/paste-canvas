@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-22.04
+            args: '--bundles deb,appimage,rpm'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './packages/tauri/src-tauri -> target'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build lib
+        run: bun run --cwd packages/lib build
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Paste Canvas ${{ github.ref_name }}'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: true
+          prerelease: false
+          projectPath: packages/tauri
+          args: ${{ matrix.args }}
+
+  snap:
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: snapcore/action-build@v1
+        id: snap-build
+
+      - name: Upload snap to release
+        run: gh release upload ${{ github.ref_name }} "${{ steps.snap-build.outputs.snap }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional: publish to Snap Store
+      # Requires SNAPCRAFT_STORE_CREDENTIALS secret (run `snapcraft export-login` locally to generate)
+      # - uses: snapcore/action-publish@v1
+      #   with:
+      #     snapcraft-token: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+      #     snap: ${{ steps.snap-build.outputs.snap }}
+      #     release: stable

@@ -1,0 +1,53 @@
+name: paste-canvas
+base: core22
+adopt-info: paste-canvas
+summary: A canvas for your clipboard
+description: |
+  Paste Canvas is a canvas for your clipboard.
+grade: stable
+confinement: strict
+
+layout:
+  /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
+    bind: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1
+
+apps:
+  paste-canvas:
+    command: usr/bin/paste-canvas
+    desktop: usr/share/applications/paste-canvas.desktop
+    extensions: [gnome]
+    plugs:
+      - home
+      - removable-media
+
+parts:
+  paste-canvas:
+    plugin: nil
+    source: .
+    build-packages:
+      - libwebkit2gtk-4.1-dev
+      - libappindicator3-dev
+      - librsvg2-dev
+      - patchelf
+      - dpkg
+      - curl
+    build-snaps:
+      - rustup/latest/stable
+    override-build: |
+      craftctl set version "$(git describe --tags --always | sed 's/^v//')"
+
+      rustup default stable
+      export PATH="$HOME/.cargo/bin:$PATH"
+
+      curl -fsSL https://bun.sh/install | bash
+      export PATH="$HOME/.bun/bin:$PATH"
+
+      bun install
+      bun run --cwd packages/lib build
+
+      bun run --cwd packages/tauri build -- --bundles deb
+
+      dpkg -x packages/tauri/src-tauri/target/release/bundle/deb/*.deb $CRAFT_PART_INSTALL/
+
+      sed -i -e "s|Icon=paste-canvas|Icon=/usr/share/icons/hicolor/32x32/apps/paste-canvas.png|g" \
+        $CRAFT_PART_INSTALL/usr/share/applications/paste-canvas.desktop
