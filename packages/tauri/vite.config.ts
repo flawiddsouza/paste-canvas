@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   clearScreen: false,
   server: {
     port: 1420,
@@ -12,4 +13,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
   },
-});
+  resolve: command === 'serve' ? {
+    alias: { '@paste-canvas/lib': resolve(__dirname, '../lib/src/index.ts') },
+  } : {},
+}));
