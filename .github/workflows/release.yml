@@ -9,7 +9,22 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create draft release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --draft \
+            --title "Paste Canvas ${{ github.ref_name }}" \
+            --notes "See the assets to download this version and install."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -54,16 +69,63 @@ jobs:
         run: bun run --cwd packages/lib build
 
       - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: packages/tauri
+          tauriScript: bunx tauri
+          args: ${{ matrix.args }}
+
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $bundle = "packages/tauri/src-tauri/target/release/bundle"
+
+          Copy-Item "$bundle/nsis/Paste Canvas_${version}_x64-setup.exe" "PasteCanvas_${version}_windows_x64_setup.exe"
+          Copy-Item "$bundle/msi/Paste Canvas_${version}_x64_en-US.msi" "PasteCanvas_${version}_windows_x64.msi"
+          Compress-Archive -Path "packages/tauri/src-tauri/target/release/paste-canvas.exe" `
+            -DestinationPath "PasteCanvas_${version}_windows_x64_portable.zip"
+
+          gh release upload ${{ github.ref_name }} `
+            "PasteCanvas_${version}_windows_x64_setup.exe" `
+            "PasteCanvas_${version}_windows_x64.msi" `
+            "PasteCanvas_${version}_windows_x64_portable.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Paste Canvas ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          projectPath: packages/tauri
-          args: ${{ matrix.args }}
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos-latest'
+        run: |
+          version="${{ github.ref_name }}"
+          version="${version#v}"
+          bundle="packages/tauri/src-tauri/target/universal-apple-darwin/release/bundle"
+
+          cp "$bundle/dmg/Paste Canvas_${version}_universal.dmg" "PasteCanvas_${version}_macos_universal.dmg"
+          cp "$bundle/macos/Paste Canvas.app.tar.gz" "PasteCanvas_${version}_macos_universal.app.tar.gz"
+
+          gh release upload ${{ github.ref_name }} \
+            "PasteCanvas_${version}_macos_universal.dmg" \
+            "PasteCanvas_${version}_macos_universal.app.tar.gz"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          version="${{ github.ref_name }}"
+          version="${version#v}"
+          bundle="packages/tauri/src-tauri/target/release/bundle"
+
+          cp "$bundle/deb/Paste Canvas_${version}_amd64.deb" "PasteCanvas_${version}_linux_x64.deb"
+          cp "$bundle/appimage/Paste Canvas_${version}_amd64.AppImage" "PasteCanvas_${version}_linux_x64.AppImage"
+          cp "$bundle/rpm/Paste Canvas-${version}-1.x86_64.rpm" "PasteCanvas_${version}_linux_x64.rpm"
+
+          gh release upload ${{ github.ref_name }} \
+            "PasteCanvas_${version}_linux_x64.deb" \
+            "PasteCanvas_${version}_linux_x64.AppImage" \
+            "PasteCanvas_${version}_linux_x64.rpm"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   snap:
     needs: release
@@ -75,14 +137,10 @@ jobs:
         id: snap-build
 
       - name: Upload snap to release
-        run: gh release upload ${{ github.ref_name }} "${{ steps.snap-build.outputs.snap }}"
+        run: |
+          version="${{ github.ref_name }}"
+          version="${version#v}"
+          cp "${{ steps.snap-build.outputs.snap }}" "PasteCanvas_${version}_linux_x64.snap"
+          gh release upload ${{ github.ref_name }} "PasteCanvas_${version}_linux_x64.snap"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Optional: publish to Snap Store
-      # Requires SNAPCRAFT_STORE_CREDENTIALS secret (run `snapcraft export-login` locally to generate)
-      # - uses: snapcore/action-publish@v1
-      #   with:
-      #     snapcraft-token: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-      #     snap: ${{ steps.snap-build.outputs.snap }}
-      #     release: stable

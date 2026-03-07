@@ -31,10 +31,11 @@ parts:
       - patchelf
       - dpkg
       - curl
+      - unzip
     build-snaps:
       - rustup/latest/stable
     override-build: |
-      craftctl set version "$(git describe --tags --always | sed 's/^v//')"
+      craftctl set version="$(git describe --tags --always | sed 's/^v//')"
 
       rustup default stable
       export PATH="$HOME/.cargo/bin:$PATH"
@@ -49,5 +50,8 @@ parts:
 
       dpkg -x packages/tauri/src-tauri/target/release/bundle/deb/*.deb $CRAFT_PART_INSTALL/
 
+      mv "$CRAFT_PART_INSTALL/usr/share/applications/Paste Canvas.desktop" \
+        "$CRAFT_PART_INSTALL/usr/share/applications/paste-canvas.desktop"
+
       sed -i -e "s|Icon=paste-canvas|Icon=/usr/share/icons/hicolor/32x32/apps/paste-canvas.png|g" \
-        $CRAFT_PART_INSTALL/usr/share/applications/paste-canvas.desktop
+        "$CRAFT_PART_INSTALL/usr/share/applications/paste-canvas.desktop"
