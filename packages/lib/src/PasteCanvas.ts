@@ -3,7 +3,7 @@ import { injectStyles } from './style.js';
 import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
 import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected } from './items.js';
-import { snapEdge, restoreEdgeSnap, removeEdge } from './edges.js';
+import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
 
 export interface PasteCanvasOptions {
@@ -238,6 +238,44 @@ export class PasteCanvas {
         const item = [...ctx.selectedItems][0];
         if (item.type === 'img')  void copyImage(ctx, item.contentEl as HTMLImageElement);
         if (item.type === 'note') void copyText(ctx, item.contentEl as HTMLTextAreaElement);
+      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && ctx.selectedItems.size > 0) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp'   ? -step : e.key === 'ArrowDown'  ? step : 0;
+        const before = new Map([ ...ctx.selectedItems ].map(r => [r.id, { x: r.x, y: r.y }]));
+        for (const r of ctx.selectedItems) {
+          r.x += dx; r.y += dy;
+          r.el.style.left = r.x + 'px';
+          r.el.style.top  = r.y + 'px';
+        }
+        updateEdgesForItems(ctx, ctx.selectedItems);
+        const after = new Map([ ...ctx.selectedItems ].map(r => [r.id, { x: r.x, y: r.y }]));
+        for (const r of ctx.selectedItems) void saveItem(ctx, r);
+        pushUndo(ctx, {
+          label: 'nudge',
+          undo() {
+            for (const [id, pos] of before) {
+              const r = ctx.items.find(i => i.id === id); if (!r) continue;
+              r.x = pos.x; r.y = pos.y;
+              r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
+              void saveItem(ctx, r);
+            }
+            updateEdgesForItems(ctx, new Set(ctx.items.filter(i => before.has(i.id))));
+            return [...before.keys()];
+          },
+          redo() {
+            for (const [id, pos] of after) {
+              const r = ctx.items.find(i => i.id === id); if (!r) continue;
+              r.x = pos.x; r.y = pos.y;
+              r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
+              void saveItem(ctx, r);
+            }
+            updateEdgesForItems(ctx, new Set(ctx.items.filter(i => after.has(i.id))));
+            return [...after.keys()];
+          },
+        });
       }
     }, { signal: ctx.signal });
   }
