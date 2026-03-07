@@ -8,5 +8,5 @@ I think images are also incremented bins?
 
 --
 
-edges don't rerender in realtime when resizing items - they rerender once it's over - it doesn't look great
+
 

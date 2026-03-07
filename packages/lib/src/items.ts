@@ -136,6 +136,9 @@ export function createItem(
       const onMove = (ev: PointerEvent) => {
         const dw = (ev.clientX - startX) / ctx.scale;
         inner.style.width = Math.max(80, startW + dw) + 'px';
+        record.w = record.el.offsetWidth;
+        record.h = record.el.offsetHeight;
+        updateEdgesForItems(ctx, new Set([record]));
       };
       const onUp = () => {
         const endW = inner.offsetWidth;
@@ -196,6 +199,9 @@ export function createItem(
         const dh = (ev.clientY - startY) / ctx.scale;
         contentEl.style.width  = Math.max(250, startW + dw) + 'px';
         contentEl.style.height = Math.max(100, startH + dh) + 'px';
+        record.w = record.el.offsetWidth;
+        record.h = record.el.offsetHeight;
+        updateEdgesForItems(ctx, new Set([record]));
       };
       const onUp = () => {
         const endW = contentEl.offsetWidth, endH = contentEl.offsetHeight;
