@@ -1,6 +1,6 @@
 import type { Ctx, StorageAdapter } from './types.js';
 import { injectStyles } from './style.js';
-import { applyTransform, saveViewport, toast, viewportCenter, clearSelection, addToSelection, initViewport, initToolbarHover } from './canvas.js';
+import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
 import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected } from './items.js';
 import { snapEdge, restoreEdgeSnap, removeEdge } from './edges.js';
@@ -39,6 +39,7 @@ export class PasteCanvas {
         <button class="btn pc-btn-delete-sel">Delete Selected</button>
         <div class="sep"></div>
         <button class="btn pc-btn-reset-view">Reset View</button>
+        <button class="btn pc-btn-fit">Fit (F)</button>
         <span class="pc-zoom-label">100%</span>
         <span class="pc-coords-label" style="font-size:11px;color:#555;min-width:80px">0, 0</span>
         <div class="sep"></div>
@@ -165,6 +166,10 @@ export class PasteCanvas {
       saveViewport(ctx);
     }, { signal });
 
+    q('.pc-btn-fit').addEventListener('click', () => {
+      fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
+    }, { signal });
+
     ctx.tabBar.querySelector('.pc-add-tab-btn')!
       .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`), { signal });
   }
@@ -225,6 +230,10 @@ export class PasteCanvas {
         if (ctx.selectedItems.size) { this.deleteSelectedItems(); }
       }
       if (e.key === 'Escape') { clearSelection(ctx); }
+      if (e.key === 'f' || e.key === 'F') {
+        fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
+        return;
+      }
       if (e.ctrlKey && e.key === 'c' && ctx.selectedItems.size === 1) {
         const item = [...ctx.selectedItems][0];
         if (item.type === 'img')  void copyImage(ctx, item.contentEl as HTMLImageElement);

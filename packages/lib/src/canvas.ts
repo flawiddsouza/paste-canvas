@@ -42,6 +42,28 @@ export function viewportCenter(ctx: Ctx): { x: number; y: number } {
   };
 }
 
+export function fitItems(ctx: Ctx, recs: ItemRecord[] = ctx.items): void {
+  if (!recs.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const rec of recs) {
+    const w = rec.w || rec.el.offsetWidth;
+    const h = rec.h || rec.el.offsetHeight;
+    minX = Math.min(minX, rec.x);     minY = Math.min(minY, rec.y);
+    maxX = Math.max(maxX, rec.x + w); maxY = Math.max(maxY, rec.y + h);
+  }
+  const pad = 64;
+  const vr = ctx.viewport.getBoundingClientRect();
+  const newScale = Math.min(1, Math.max(0.1, Math.min(
+    (vr.width  - pad * 2) / (maxX - minX),
+    (vr.height - pad * 2) / (maxY - minY),
+  )));
+  ctx.scale = newScale;
+  ctx.panX = vr.width  / 2 - ((minX + maxX) / 2) * newScale;
+  ctx.panY = vr.height / 2 - ((minY + maxY) / 2) * newScale;
+  applyTransform(ctx);
+  saveViewport(ctx);
+}
+
 export function clearEdgeSelection(ctx: Ctx): void {
   for (const e of ctx.selectedEdges) e.pathEl.classList.remove('selected');
   ctx.selectedEdges.clear();
