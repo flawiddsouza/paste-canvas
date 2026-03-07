@@ -197,7 +197,8 @@ export function initViewport(ctx: Ctx): void {
 
   ctx.viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const delta    = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const px       = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 600 : e.deltaY;
+    const delta    = Math.pow(0.999, px);
     const newScale = Math.min(5, Math.max(0.1, ctx.scale * delta));
     const vr = ctx.viewport.getBoundingClientRect();
     const mx = e.clientX - vr.left;
