@@ -136,9 +136,11 @@ export function clearSelection(ctx: Ctx): void {
 export function addToSelection(ctx: Ctx, item: ItemRecord): void {
   ctx.selectedItems.add(item);
   item.el.classList.add('selected');
-  item.el.style.zIndex = String(++ctx.itemCounter);
-  for (const edge of (ctx.nodeEdgeMap.get(item.id) ?? [])) {
-    if (edge.toNode === item.id) edge.svgEl.style.zIndex = item.el.style.zIndex;
+  if (item.type !== 'group') {
+    item.el.style.zIndex = String(++ctx.itemCounter);
+    for (const edge of (ctx.nodeEdgeMap.get(item.id) ?? [])) {
+      if (edge.toNode === item.id) edge.svgEl.style.zIndex = item.el.style.zIndex;
+    }
   }
 }
 
@@ -330,7 +332,13 @@ function buildOverviewCache(ctx: Ctx): void {
   c2d.translate(-minX, -minY);
   for (const item of ctx.items) {
     const iw = item.w || 200, ih = item.h || 200;
-    if (item.type === 'img') {
+    if (item.type === 'group') {
+      c2d.fillStyle = 'rgba(255, 200, 60, 0.07)';
+      c2d.fillRect(item.x, item.y, iw, ih);
+      c2d.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      c2d.lineWidth = 2;
+      c2d.strokeRect(item.x, item.y, iw, ih);
+    } else if (item.type === 'img') {
       const img = item.contentEl as HTMLImageElement;
       if (img.complete && img.naturalWidth > 0) {
         c2d.drawImage(img, item.x, item.y, iw, ih);

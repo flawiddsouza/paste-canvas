@@ -3,6 +3,7 @@ import { injectStyles } from './style.js';
 import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
 import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected } from './items.js';
+import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
 
@@ -35,6 +36,7 @@ export class PasteCanvas {
         <button class="btn pc-btn-note">+ Note</button>
         <button class="btn pc-btn-paste">Paste</button>
         <div class="sep"></div>
+        <button class="btn pc-btn-group">Group</button>
         <button class="btn pc-btn-delete-sel">Delete</button>
         <div class="sep"></div>
         <button class="btn pc-btn-reset-view">Home</button>
@@ -62,6 +64,7 @@ export class PasteCanvas {
                 <tr><td>Escape</td><td>Deselect</td></tr>
                 <tr><td>Delete / Backspace</td><td>Delete selected</td></tr>
                 <tr><td>Ctrl+D</td><td>Duplicate selected</td></tr>
+                <tr><td>Ctrl+G</td><td>Group selected items</td></tr>
                 <tr><td>Ctrl+C</td><td>Copy selected item</td></tr>
                 <tr><td>Arrow keys</td><td>Nudge 1px</td></tr>
                 <tr><td>Shift+Arrow keys</td><td>Nudge 10px</td></tr>
@@ -151,7 +154,7 @@ export class PasteCanvas {
     initToolbarHover(ctx);
     this.setupToolbarButtons(container);
     this.setupPaste();
-    this.setupKeyboard();
+    this.setupKeyboard(container);
   }
 
   private setupToolbarButtons(container: HTMLElement): void {
@@ -184,6 +187,10 @@ export class PasteCanvas {
       }
     }, { signal });
 
+    q('.pc-btn-group').addEventListener('click', () => {
+      groupSelectedItems(ctx);
+    }, { signal });
+
     q('.pc-btn-delete-sel').addEventListener('click', () => {
       if (ctx.selectedItems.size === 0 && ctx.selectedEdges.size === 0) {
         toast(ctx, 'No item selected');
@@ -203,7 +210,7 @@ export class PasteCanvas {
       fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
     }, { signal });
 
-    const helpModal = q<HTMLDivElement>('.pc-help-modal');
+    const helpModal = q('.pc-help-modal') as HTMLDivElement;
     q('.pc-btn-help').addEventListener('click', () => { helpModal.hidden = false; }, { signal });
     q('.pc-help-close').addEventListener('click', () => { helpModal.hidden = true; }, { signal });
     helpModal.addEventListener('click', (e) => { if (e.target === helpModal) helpModal.hidden = true; }, { signal });
@@ -250,7 +257,7 @@ export class PasteCanvas {
     }, { signal: ctx.signal });
   }
 
-  private setupKeyboard(): void {
+  private setupKeyboard(container: HTMLElement): void {
     const ctx = this.ctx;
     document.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
@@ -263,6 +270,7 @@ export class PasteCanvas {
         return;
       }
       if (e.ctrlKey && e.key === 'd') { e.preventDefault(); void duplicateSelected(ctx); return; }
+      if (e.ctrlKey && e.key === 'g') { e.preventDefault(); groupSelectedItems(ctx); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (ctx.selectedEdges.size) { this.deleteSelectedEdges(); return; }
         if (ctx.selectedItems.size) { this.deleteSelectedItems(); }
@@ -333,12 +341,35 @@ export class PasteCanvas {
       }
     }
     const edgeSnaps = [...edgeSnapMap.values()];
+
+    // For each selected group, track members NOT in the selection so we can
+    // restore their groupId on undo (removeItem clears it).
+    const orphanedMembers = new Map<number, number[]>(); // groupId -> memberIds
+    for (const item of ctx.selectedItems) {
+      if (item.type === 'group') {
+        const ids = ctx.items
+          .filter(i => i.groupId === item.id && !ctx.selectedItems.has(i))
+          .map(i => i.id);
+        if (ids.length) orphanedMembers.set(item.id, ids);
+      }
+    }
+
     for (const item of [...ctx.selectedItems]) removeItem(ctx, item, { skipRevoke: true });
     pushUndo(ctx, {
       label: snaps.length === 1
-        ? 'delete ' + (snaps[0].type === 'img' ? 'image' : 'note')
+        ? 'delete ' + (snaps[0].type === 'img' ? 'image' : snaps[0].type === 'group' ? 'group' : 'note')
         : `delete ${snaps.length} items`,
-      undo() { for (const s of snaps) restoreItemSnap(ctx, s); for (const es of edgeSnaps) restoreEdgeSnap(ctx, es); return snaps.map(s => s.id); },
+      undo() {
+        for (const s of snaps) restoreItemSnap(ctx, s);
+        for (const [groupId, memberIds] of orphanedMembers) {
+          for (const mid of memberIds) {
+            const m = ctx.itemsById.get(mid);
+            if (m) { m.groupId = groupId; void saveItem(ctx, m); }
+          }
+        }
+        for (const es of edgeSnaps) restoreEdgeSnap(ctx, es);
+        return snaps.map(s => s.id);
+      },
       redo() { for (const s of snaps) { const r = ctx.items.find(i => i.id === s.id); if (r) removeItem(ctx, r, { skipRevoke: true }); } return []; },
       dispose() { for (const s of snaps) { if (s.blobUrl && !ctx.items.find(i => i.id === s.id)) URL.revokeObjectURL(s.blobUrl!); } },
     });

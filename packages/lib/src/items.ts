@@ -14,11 +14,12 @@ export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
     y: rec.y,
     w: rec.w,
     h: rec.h,
-    zIndex: parseInt(rec.el.style.zIndex) || 0,
-    text:          rec.type === 'note' ? (rec.contentEl as HTMLTextAreaElement).value : undefined,
-    contentWidth:  rec.type === 'note' ? rec.contentEl.offsetWidth                   : undefined,
-    contentHeight: rec.type === 'note' ? rec.contentEl.offsetHeight                  : undefined,
-    blobUrl:    rec.type === 'img' ? (rec.contentEl as HTMLImageElement).src                        : undefined,
+    zIndex:  parseInt(rec.el.style.zIndex) || 0,
+    groupId: rec.groupId,
+    text:          (rec.type === 'note' || rec.type === 'group') ? (rec.contentEl as HTMLTextAreaElement).value : undefined,
+    contentWidth:  rec.type === 'note' ? rec.contentEl.offsetWidth  : undefined,
+    contentHeight: rec.type === 'note' ? rec.contentEl.offsetHeight : undefined,
+    blobUrl:    rec.type === 'img' ? (rec.contentEl as HTMLImageElement).src          : undefined,
     imageWidth: rec.type === 'img' ? rec.contentEl.parentElement?.offsetWidth        : undefined,
     label:      rec.type === 'img' ? (rec.labelEl?.value ?? '')                      : undefined,
   };
@@ -27,10 +28,15 @@ export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
 export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
   const rec = createItem(ctx, snap.type, snap.x, snap.y, { id: snap.id, restore: true });
   rec.el.style.zIndex = String(snap.zIndex);
+  rec.groupId = snap.groupId;
   if (snap.type === 'note') {
     (rec.contentEl as HTMLTextAreaElement).value = snap.text || '';
     if (snap.contentWidth)  rec.contentEl.style.width  = snap.contentWidth  + 'px';
     if (snap.contentHeight) rec.contentEl.style.height = snap.contentHeight + 'px';
+  } else if (snap.type === 'group') {
+    if (snap.w) { rec.el.style.width  = snap.w + 'px'; rec.w = snap.w; }
+    if (snap.h) { rec.el.style.height = snap.h + 'px'; rec.h = snap.h; }
+    if (snap.text) (rec.contentEl as HTMLTextAreaElement).value = snap.text;
   } else {
     if (snap.w) rec.w = snap.w;
     if (snap.h) rec.h = snap.h;
@@ -58,14 +64,15 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
     record.h = record.el.offsetHeight;
   }
   const data = {
-    id:     record.id,
-    type:   record.type,
-    tabId:  ctx.currentTabId!,
-    x:      record.x,
-    y:      record.y,
-    w:      record.w,
-    h:      record.h,
-    zIndex: parseInt(record.el.style.zIndex) || 0,
+    id:      record.id,
+    type:    record.type,
+    tabId:   ctx.currentTabId!,
+    x:       record.x,
+    y:       record.y,
+    w:       record.w,
+    h:       record.h,
+    zIndex:  parseInt(record.el.style.zIndex) || 0,
+    groupId: record.groupId,
   } as Parameters<typeof ctx.adapter.putItem>[0];
 
   if (record.type === 'img') {
@@ -79,6 +86,8 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
       data.width     = imgEl.parentElement!.offsetWidth;
       data.label     = record.labelEl ? record.labelEl.value : '';
     } catch { return; }
+  } else if (record.type === 'group') {
+    data.text = (record.contentEl as HTMLTextAreaElement).value;
   } else {
     const ta = record.contentEl as HTMLTextAreaElement;
     data.text   = ta.value;
@@ -98,7 +107,7 @@ interface CreateItemOpts {
 
 export function createItem(
   ctx: Ctx,
-  type: 'note' | 'img',
+  type: 'note' | 'img' | 'group',
   x: number,
   y: number,
   opts: CreateItemOpts = {},
@@ -111,6 +120,215 @@ export function createItem(
   el.style.left   = x + 'px';
   el.style.top    = y + 'px';
   el.style.zIndex = String(id);
+
+  // ── Group items: no item-inner, label textarea is contentEl ─────────────
+  if (type === 'group') {
+    const groupLabel = document.createElement('textarea');
+    groupLabel.className = 'group-label';
+    groupLabel.placeholder = 'Label\u2026';
+    groupLabel.rows = 1;
+
+    const rh = document.createElement('div');
+    rh.className = 'resize-handle';
+
+    const itb = document.createElement('div');
+    itb.className = 'item-toolbar';
+    itb.addEventListener('pointerdown', (e) => { if (e.button !== 1) e.stopPropagation(); });
+
+    const ungroupBtn = document.createElement('button');
+    ungroupBtn.className = 'item-btn';
+    ungroupBtn.textContent = 'Ungroup';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'item-btn danger';
+    delBtn.textContent = 'Delete';
+
+    itb.appendChild(ungroupBtn);
+    itb.appendChild(delBtn);
+    el.appendChild(itb);
+    el.appendChild(groupLabel);
+    el.appendChild(rh);
+
+    const record: ItemRecord = { id, el, type, x, y, w: 0, h: 0, contentEl: groupLabel, mounted: false };
+    ctx.items.push(record);
+    ctx.itemsById.set(id, record);
+
+    if (!opts.skipMount) {
+      ctx.surface.appendChild(el);
+      record.mounted = true;
+      invalidateOverviewCache(ctx);
+    }
+
+    makeDraggable(ctx, record);
+
+    rh.addEventListener('pointerdown', (e) => {
+      if (e.button === 1) return;
+      e.stopPropagation();
+      e.preventDefault();
+      rh.setPointerCapture(e.pointerId);
+      const startX = e.clientX, startY = e.clientY;
+      const startW = el.offsetWidth, startH = el.offsetHeight;
+      const onMove = (ev: PointerEvent) => {
+        const dw = (ev.clientX - startX) / ctx.scale;
+        const dh = (ev.clientY - startY) / ctx.scale;
+        el.style.width  = Math.max(120, startW + dw) + 'px';
+        el.style.height = Math.max(80,  startH + dh) + 'px';
+        record.w = el.offsetWidth;
+        record.h = el.offsetHeight;
+      };
+      const onUp = () => {
+        const endW = el.offsetWidth, endH = el.offsetHeight;
+        void saveItem(ctx, record);
+        if (endW !== startW || endH !== startH) {
+          const itemId = record.id;
+          pushUndo(ctx, {
+            label: 'resize',
+            undo() {
+              const r = ctx.items.find(i => i.id === itemId);
+              if (!r) return [];
+              r.el.style.width  = startW + 'px';
+              r.el.style.height = startH + 'px';
+              void saveItem(ctx, r);
+              return [itemId];
+            },
+            redo() {
+              const r = ctx.items.find(i => i.id === itemId);
+              if (!r) return [];
+              r.el.style.width  = endW + 'px';
+              r.el.style.height = endH + 'px';
+              void saveItem(ctx, r);
+              return [itemId];
+            },
+          });
+        }
+        rh.removeEventListener('pointermove',   onMove);
+        rh.removeEventListener('pointerup',     onUp);
+        rh.removeEventListener('pointercancel', onUp);
+      };
+      rh.addEventListener('pointermove',   onMove);
+      rh.addEventListener('pointerup',     onUp);
+      rh.addEventListener('pointercancel', onUp);
+    });
+
+    rh.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const members = ctx.items.filter(i => i.groupId === record.id);
+      if (members.length === 0) return;
+      const PAD = 24;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const m of members) {
+        const mw = m.w || m.el.offsetWidth || 200;
+        const mh = m.h || m.el.offsetHeight || 200;
+        minX = Math.min(minX, m.x); minY = Math.min(minY, m.y);
+        maxX = Math.max(maxX, m.x + mw); maxY = Math.max(maxY, m.y + mh);
+      }
+      const newX = minX - PAD, newY = minY - PAD;
+      const newW = maxX - minX + PAD * 2;
+      const newH = maxY - minY + PAD * 2;
+      const prevX = record.x, prevY = record.y;
+      const prevW = record.w, prevH = record.h;
+      if (newX === prevX && newY === prevY && newW === prevW && newH === prevH) return;
+      record.x = newX; record.y = newY;
+      el.style.left = newX + 'px'; el.style.top  = newY + 'px';
+      el.style.width = newW + 'px'; el.style.height = newH + 'px';
+      record.w = newW; record.h = newH;
+      void saveItem(ctx, record);
+      const itemId = record.id;
+      pushUndo(ctx, {
+        label: 'resize',
+        undo() {
+          const r = ctx.itemsById.get(itemId);
+          if (!r) return [];
+          r.x = prevX; r.y = prevY;
+          r.el.style.left = prevX + 'px'; r.el.style.top  = prevY + 'px';
+          r.el.style.width = prevW + 'px'; r.el.style.height = prevH + 'px';
+          r.w = prevW; r.h = prevH;
+          void saveItem(ctx, r);
+          return [itemId];
+        },
+        redo() {
+          const r = ctx.itemsById.get(itemId);
+          if (!r) return [];
+          r.x = newX; r.y = newY;
+          r.el.style.left = newX + 'px'; r.el.style.top  = newY + 'px';
+          r.el.style.width = newW + 'px'; r.el.style.height = newH + 'px';
+          r.w = newW; r.h = newH;
+          void saveItem(ctx, r);
+          return [itemId];
+        },
+      });
+    });
+
+    ungroupBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const memberIds = ctx.items.filter(i => i.groupId === record.id).map(i => i.id);
+      const groupSnap = snapItem(ctx, record);
+      for (const mid of memberIds) {
+        const m = ctx.itemsById.get(mid);
+        if (m) { m.groupId = undefined; void saveItem(ctx, m); }
+      }
+      removeItem(ctx, record);
+      pushUndo(ctx, {
+        label: 'ungroup',
+        undo() {
+          const g = createItem(ctx, 'group', groupSnap.x, groupSnap.y, { id: groupSnap.id, restore: true });
+          g.el.style.width  = (groupSnap.w || 200) + 'px';
+          g.el.style.height = (groupSnap.h || 100) + 'px';
+          g.w = groupSnap.w || 200; g.h = groupSnap.h || 100;
+          g.el.style.zIndex = String(groupSnap.zIndex);
+          if (groupSnap.text) (g.contentEl as HTMLTextAreaElement).value = groupSnap.text;
+          for (const mid of memberIds) {
+            const m = ctx.itemsById.get(mid);
+            if (m) { m.groupId = groupSnap.id; void saveItem(ctx, m); }
+          }
+          void saveItem(ctx, g);
+          return [groupSnap.id, ...memberIds];
+        },
+        redo() {
+          for (const mid of memberIds) {
+            const m = ctx.itemsById.get(mid);
+            if (m) { m.groupId = undefined; void saveItem(ctx, m); }
+          }
+          const g = ctx.itemsById.get(groupSnap.id);
+          if (g) removeItem(ctx, g);
+          return memberIds;
+        },
+      });
+    });
+
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const snap = snapItem(ctx, record);
+      const memberIds = ctx.items.filter(i => i.groupId === record.id).map(i => i.id);
+      removeItem(ctx, record);
+      pushUndo(ctx, {
+        label: 'delete group',
+        undo() {
+          restoreItemSnap(ctx, snap);
+          for (const mid of memberIds) {
+            const m = ctx.itemsById.get(mid);
+            if (m) { m.groupId = snap.id; void saveItem(ctx, m); }
+          }
+          return [snap.id, ...memberIds];
+        },
+        redo() {
+          const r = ctx.itemsById.get(snap.id);
+          if (r) removeItem(ctx, r);
+          return [];
+        },
+      });
+    });
+
+    let labelTimer: ReturnType<typeof setTimeout> | null = null;
+    groupLabel.addEventListener('input', () => {
+      clearTimeout(labelTimer ?? undefined);
+      labelTimer = setTimeout(() => void saveItem(ctx, record), 600);
+    });
+
+    if (!opts.restore) selectItem(ctx, record);
+
+    return record;
+  }
 
   const inner = document.createElement('div');
   inner.className = 'item-inner';
@@ -434,6 +652,12 @@ export function createItem(
 // ── Remove item ───────────────────────────────────────────────────────────────
 
 export function removeItem(ctx: Ctx, record: ItemRecord, { skipRevoke = false } = {}): void {
+  if (record.type === 'group') {
+    for (const member of ctx.items.filter(i => i.groupId === record.id)) {
+      member.groupId = undefined;
+      void saveItem(ctx, member);
+    }
+  }
   const connected = ctx.nodeEdgeMap.get(record.id);
   if (connected) { for (const e of [...connected]) removeEdge(ctx, e); }
   ctx.nodeEdgeMap.delete(record.id);
@@ -511,6 +735,8 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
   let startCanvasX = 0, startCanvasY = 0;
   let startPositions: Map<ItemRecord, { x: number; y: number }>;
   let beforeDrag: Map<number, { x: number; y: number }>;
+  let movingItems: Set<ItemRecord>;
+  let passengers: ItemRecord[] = [];
 
   el.addEventListener('pointerdown', (e) => {
     if (e.button === 1) return;
@@ -544,12 +770,25 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     startCanvasY = (e.clientY - vr.top  - ctx.panY) / ctx.scale;
     startPositions = new Map();
     beforeDrag = new Map();
+    passengers = [];
     for (const item of ctx.selectedItems) {
       const sx = parseFloat(item.el.style.left) || 0;
       const sy = parseFloat(item.el.style.top)  || 0;
       startPositions.set(item, { x: sx, y: sy });
       beforeDrag.set(item.id, { x: sx, y: sy });
+      if (item.type === 'group') {
+        for (const member of ctx.items.filter(i => i.groupId === item.id)) {
+          if (!ctx.selectedItems.has(member)) {
+            passengers.push(member);
+            const mx = parseFloat(member.el.style.left) || 0;
+            const my = parseFloat(member.el.style.top)  || 0;
+            startPositions.set(member, { x: mx, y: my });
+            beforeDrag.set(member.id, { x: mx, y: my });
+          }
+        }
+      }
     }
+    movingItems = new Set(startPositions.keys());
   });
 
   el.addEventListener('pointermove', (e) => {
@@ -564,19 +803,20 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
       item.x = start.x + dx;
       item.y = start.y + dy;
     }
-    updateEdgesForItems(ctx, ctx.selectedItems);
+    updateEdgesForItems(ctx, movingItems);
   });
 
   el.addEventListener('pointerup', () => {
     if (!dragging) return;
     dragging = false;
-    for (const item of ctx.selectedItems) void saveItem(ctx, item);
+    for (const item of startPositions.keys()) void saveItem(ctx, item);
     const afterDrag = new Map<number, { x: number; y: number }>();
     let hasMoved = false;
-    for (const item of ctx.selectedItems) {
-      const before = beforeDrag.get(item.id);
-      afterDrag.set(item.id, { x: item.x, y: item.y });
-      if (before && (before.x !== item.x || before.y !== item.y)) hasMoved = true;
+    for (const [id, before] of beforeDrag) {
+      const r = ctx.itemsById.get(id);
+      if (!r) continue;
+      afterDrag.set(id, { x: r.x, y: r.y });
+      if (before.x !== r.x || before.y !== r.y) hasMoved = true;
     }
     if (hasMoved) {
       invalidateOverviewCache(ctx);
@@ -618,12 +858,20 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
 export async function duplicateSelected(ctx: Ctx): Promise<void> {
   if (ctx.selectedItems.size === 0) return;
   const OFFSET = 24;
-  const toClone = [...ctx.selectedItems];
+
+  const selectedGroupIds = new Set([...ctx.selectedItems].filter(i => i.type === 'group').map(i => i.id));
+  // Standalone: not groups, and not members of a selected group
+  const toClone = [...ctx.selectedItems].filter(
+    i => i.type !== 'group' && !(i.groupId != null && selectedGroupIds.has(i.groupId))
+  );
+  const groupsToClone = [...ctx.selectedItems].filter(i => i.type === 'group');
+
   clearSelection(ctx);
 
   const allSnaps: SnapItem[] = [];
   const imgLoadPromises: Promise<void>[] = [];
 
+  // Duplicate standalone items
   for (const item of toClone) {
     if (item.type === 'note') {
       const rec = createItem(ctx, 'note', item.x + OFFSET, item.y + OFFSET, { restore: true });
@@ -656,6 +904,64 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
       });
       imgLoadPromises.push(p);
     }
+  }
+
+  // Duplicate groups with their members
+  for (const group of groupsToClone) {
+    const members = ctx.items.filter(i => i.groupId === group.id);
+    const gw = group.w || group.el.offsetWidth;
+    const gh = group.h || group.el.offsetHeight;
+
+    const newGroup = createItem(ctx, 'group', group.x + OFFSET, group.y + OFFSET, { restore: true });
+    newGroup.el.style.width  = gw + 'px';
+    newGroup.el.style.height = gh + 'px';
+    newGroup.w = gw; newGroup.h = gh;
+    const srcLabel = (group.contentEl as HTMLTextAreaElement).value;
+    if (srcLabel) (newGroup.contentEl as HTMLTextAreaElement).value = srcLabel;
+    addToSelection(ctx, newGroup);
+
+    for (const member of members) {
+      if (member.type === 'note') {
+        const rec = createItem(ctx, 'note', member.x + OFFSET, member.y + OFFSET, { restore: true });
+        (rec.contentEl as HTMLTextAreaElement).value = (member.contentEl as HTMLTextAreaElement).value;
+        rec.contentEl.style.width  = member.contentEl.offsetWidth  + 'px';
+        rec.contentEl.style.height = member.contentEl.offsetHeight + 'px';
+        rec.groupId = newGroup.id;
+        void saveItem(ctx, rec);
+        addToSelection(ctx, rec);
+        allSnaps.push(snapItem(ctx, rec));
+      } else if (member.type === 'img') {
+        const rec = createItem(ctx, 'img', member.x + OFFSET, member.y + OFFSET, { restore: true });
+        rec.contentEl.parentElement!.style.width = member.contentEl.parentElement!.offsetWidth + 'px';
+        if (member.labelEl && rec.labelEl) rec.labelEl.value = member.labelEl.value;
+        rec.groupId = newGroup.id;
+        addToSelection(ctx, rec);
+        const p = new Promise<void>(resolve => {
+          fetch((member.contentEl as HTMLImageElement).src)
+            .then(r => r.blob())
+            .then(blob => {
+              const url = URL.createObjectURL(blob);
+              (rec.contentEl as HTMLImageElement).onload = () => {
+                rec.w = rec.el.offsetWidth;
+                rec.h = rec.el.offsetHeight;
+                void saveItem(ctx, rec);
+                allSnaps.push(snapItem(ctx, rec));
+                resolve();
+              };
+              (rec.contentEl as HTMLImageElement).src = url;
+            })
+            .catch(resolve);
+        });
+        imgLoadPromises.push(p);
+      }
+    }
+
+    // Group z-index must sit below all its new members
+    const memberZIndices = members.map(m => parseInt(m.el.style.zIndex) || 0);
+    const targetZ = memberZIndices.length > 0 ? Math.max(1, Math.min(...memberZIndices) - 1) : parseInt(newGroup.el.style.zIndex);
+    newGroup.el.style.zIndex = String(targetZ);
+    void saveItem(ctx, newGroup);
+    allSnaps.push(snapItem(ctx, newGroup));
   }
 
   await Promise.all(imgLoadPromises);

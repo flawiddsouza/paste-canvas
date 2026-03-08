@@ -4,13 +4,14 @@ export type Side = 'top' | 'right' | 'bottom' | 'left';
 
 export interface ItemData {
   id: number;
-  type: 'note' | 'img';
+  type: 'note' | 'img' | 'group';
   tabId: number;
   x: number;
   y: number;
   w: number;
   h: number;
   zIndex: number;
+  groupId?: number;
   // note fields
   text?: string;
   width?: number;
@@ -47,15 +48,16 @@ export interface ViewportState {
 export interface ItemRecord {
   id: number;
   el: HTMLDivElement;
-  type: 'note' | 'img';
+  type: 'note' | 'img' | 'group';
   x: number;
   y: number;
   w: number;
   h: number;
-  contentEl: HTMLElement; // HTMLTextAreaElement for notes, HTMLImageElement for imgs
+  contentEl: HTMLElement; // HTMLTextAreaElement for notes/groups, HTMLImageElement for imgs
   labelEl?: HTMLTextAreaElement;
   _autoGrowLabel?: () => void;
   mounted: boolean;
+  groupId?: number;
 }
 
 export interface EdgeRecord {
@@ -74,13 +76,14 @@ export interface EdgeRecord {
 
 export interface SnapItem {
   id: number;
-  type: 'note' | 'img';
+  type: 'note' | 'img' | 'group';
   x: number;
   y: number;
   w?: number;
   h?: number;
   zIndex: number;
-  // note
+  groupId?: number;
+  // note / group label
   text?: string;
   contentWidth?: number;
   contentHeight?: number;

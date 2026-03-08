@@ -325,8 +325,47 @@ export const css = `
   .paste-canvas-root .pc-surface.overview-lod .item-toolbar,
   .paste-canvas-root .pc-surface.overview-lod .port,
   .paste-canvas-root .pc-surface.overview-lod .resize-handle,
-  .paste-canvas-root .pc-surface.overview-lod .img-label {
+  .paste-canvas-root .pc-surface.overview-lod .img-label,
+  .paste-canvas-root .pc-surface.overview-lod .group-label {
     display: none !important;
+  }
+
+  /* ── Group items ── */
+  .paste-canvas-root .item-group {
+    border-radius: 6px;
+    border: 2px dashed rgba(255, 255, 255, 0.15);
+    background: rgba(255, 200, 60, 0.06);
+    cursor: grab;
+    min-width: 120px;
+    min-height: 80px;
+  }
+  .paste-canvas-root .item-group:active { cursor: grabbing; }
+  .paste-canvas-root .item-group.selected {
+    border-color: #2d6be0;
+    border-style: solid;
+  }
+
+  .paste-canvas-root .group-label {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    right: 24px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    resize: none;
+    overflow: hidden;
+    cursor: text;
+    user-select: text;
+    line-height: 1.4;
+    padding: 0;
+  }
+  .paste-canvas-root .group-label::placeholder {
+    color: rgba(255, 255, 255, 0.2);
   }
 
   /* ── Help modal ── */

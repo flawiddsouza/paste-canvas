@@ -46,7 +46,13 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
 
   for (const saved of tabItems) {
     let rec: ReturnType<typeof createItem>;
-    if (saved.type === 'img') {
+    if (saved.type === 'group') {
+      rec = createItem(ctx, 'group', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
+      rec.el.style.zIndex = String(saved.zIndex);
+      if (saved.w) { rec.el.style.width  = saved.w + 'px'; rec.w = saved.w; }
+      if (saved.h) { rec.el.style.height = saved.h + 'px'; rec.h = saved.h; }
+      if (saved.text) (rec.contentEl as HTMLTextAreaElement).value = saved.text;
+    } else if (saved.type === 'img') {
       const blob = new Blob([saved.imageData!], { type: saved.imageType || 'image/png' });
       rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
       rec.contentEl.parentElement!.style.width = (saved.width || 300) + 'px';
@@ -73,6 +79,14 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
     }
     if (saved.w != null) rec.w = saved.w;
     if (saved.h != null) rec.h = saved.h;
+  }
+
+  // Second pass: restore groupId on member items
+  for (const saved of tabItems) {
+    if (saved.groupId) {
+      const rec = ctx.itemsById.get(saved.id);
+      if (rec && ctx.itemsById.has(saved.groupId)) rec.groupId = saved.groupId;
+    }
   }
 
   // Load edges
@@ -152,9 +166,11 @@ export function renderTabBar(ctx: Ctx): void {
         : (await ctx.adapter.getAllItems()).filter(i => i.tabId === tab.id);
       const notes  = items.filter(i => i.type === 'note').length;
       const images = items.filter(i => i.type === 'img').length;
+      const groups = items.filter(i => i.type === 'group').length;
       const parts  = [
         notes  ? `${notes} ${notes  === 1 ? 'note'  : 'notes'}`  : '',
         images ? `${images} ${images === 1 ? 'image' : 'images'}` : '',
+        groups ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : '',
       ].filter(Boolean);
       const safeName = tab.name.replace(/&/g, '&amp;').replace(/</g, '&lt;');
       const msg = parts.length
