@@ -133,6 +133,7 @@ export function createItem(
     inner.appendChild(rh);
 
     rh.addEventListener('pointerdown', (e) => {
+      if (e.button === 1) return;
       e.stopPropagation();
       e.preventDefault();
       rh.setPointerCapture(e.pointerId);
@@ -194,6 +195,7 @@ export function createItem(
     inner.appendChild(rh);
 
     rh.addEventListener('pointerdown', (e) => {
+      if (e.button === 1) return;
       e.stopPropagation();
       e.preventDefault();
       rh.setPointerCapture(e.pointerId);
@@ -249,7 +251,7 @@ export function createItem(
   // Per-item toolbar
   const itb = document.createElement('div');
   itb.className = 'item-toolbar';
-  itb.addEventListener('pointerdown', (e) => e.stopPropagation());
+  itb.addEventListener('pointerdown', (e) => { if (e.button !== 1) e.stopPropagation(); });
 
   if (type === 'img') {
     const copyBtn = document.createElement('button');
