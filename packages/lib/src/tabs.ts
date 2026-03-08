@@ -1,7 +1,7 @@
 import type { Ctx, EdgeRecord } from './types.js';
 import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache, toast, showConfirm } from './canvas.js';
 import { renderEdge, updateEdgesForItems } from './edges.js';
-import { createItem, saveItem } from './items.js';
+import { createItem, saveItem, applyNoteColor } from './items.js';
 import { saveTabHistory, restoreTabHistory } from './history.js';
 
 // ── Unload current tab's items/edges ─────────────────────────────────────────
@@ -76,6 +76,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
       if (saved.width)  rec.contentEl.style.width  = saved.width  + 'px';
       if (saved.height) rec.contentEl.style.height = saved.height + 'px';
       rec.el.style.zIndex = String(saved.zIndex);
+      if (saved.color) { rec.color = saved.color; applyNoteColor(rec, saved.color); }
     }
     if (saved.w != null) rec.w = saved.w;
     if (saved.h != null) rec.h = saved.h;

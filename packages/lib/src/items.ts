@@ -4,6 +4,31 @@ import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateO
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
 import { toast } from './canvas.js';
 
+// ── Note color helper ─────────────────────────────────────────────────────────
+
+const COLOR_HEX: Record<string, string> = {
+  '1': '#ff5252',
+  '2': '#ff9040',
+  '3': '#ffd433',
+  '4': '#44cf6e',
+  '5': '#438dff',
+  '6': '#a15ef4',
+  '7': '#d06090',
+};
+const HEX_TO_SWATCH: Record<string, string> = Object.fromEntries(
+  Object.entries(COLOR_HEX).map(([k, v]) => [v, k])
+);
+
+export function applyNoteColor(rec: ItemRecord, color: string | undefined): void {
+  if (!color) {
+    rec.el.style.removeProperty('--note-color');
+    rec.el.classList.remove('colored');
+  } else {
+    rec.el.style.setProperty('--note-color', color);
+    rec.el.classList.add('colored');
+  }
+}
+
 // ── Snapshots ────────────────────────────────────────────────────────────────
 
 export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
@@ -22,6 +47,7 @@ export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
     blobUrl:    rec.type === 'img' ? (rec.contentEl as HTMLImageElement).src          : undefined,
     imageWidth: rec.type === 'img' ? rec.contentEl.parentElement?.offsetWidth        : undefined,
     label:      rec.type === 'img' ? (rec.labelEl?.value ?? '')                      : undefined,
+    color:      rec.type === 'note' ? rec.color : undefined,
   };
 }
 
@@ -33,6 +59,7 @@ export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
     (rec.contentEl as HTMLTextAreaElement).value = snap.text || '';
     if (snap.contentWidth)  rec.contentEl.style.width  = snap.contentWidth  + 'px';
     if (snap.contentHeight) rec.contentEl.style.height = snap.contentHeight + 'px';
+    if (snap.color) { rec.color = snap.color; applyNoteColor(rec, snap.color); }
   } else if (snap.type === 'group') {
     if (snap.w) { rec.el.style.width  = snap.w + 'px'; rec.w = snap.w; }
     if (snap.h) { rec.el.style.height = snap.h + 'px'; rec.h = snap.h; }
@@ -93,6 +120,7 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
     data.text   = ta.value;
     data.width  = ta.offsetWidth;
     data.height = ta.offsetHeight;
+    if (record.color) data.color = record.color;
   }
   ctx.adapter.putItem(data);
 }
@@ -564,6 +592,81 @@ export function createItem(
       void copyText(ctx, contentEl as HTMLTextAreaElement);
     });
     itb.appendChild(copyBtn);
+
+    // Color swatches
+    const swatchSep = document.createElement('span');
+    swatchSep.style.cssText = 'width:1px;height:12px;background:#555;margin:0 2px;flex-shrink:0;align-self:center';
+    itb.appendChild(swatchSep);
+
+    const COLORS = ['1','2','3','4','5','6','7'] as const;
+    const swatchEls: HTMLButtonElement[] = [];
+
+    const resetSwatch = document.createElement('button');
+    resetSwatch.className = 'item-color-swatch active';
+    resetSwatch.dataset.color = 'reset';
+    resetSwatch.title = 'Default color';
+    itb.appendChild(resetSwatch);
+    swatchEls.push(resetSwatch);
+
+    for (const c of COLORS) {
+      const sw = document.createElement('button');
+      sw.className = 'item-color-swatch';
+      sw.dataset.color = c;
+      sw.title = `Color ${c}`;
+      itb.appendChild(sw);
+      swatchEls.push(sw);
+    }
+
+    const activeSwatchKey = (color: string | undefined) =>
+      color ? (HEX_TO_SWATCH[color] ?? color) : 'reset';
+
+    const syncSwatches = () => {
+      const key = activeSwatchKey(record.color);
+      for (const sw of swatchEls) sw.classList.toggle('active', sw.dataset.color === key);
+    };
+
+    const setColor = (newColor: string | undefined) => {
+      // newColor is a swatch key ("1"-"7") or undefined — convert to hex for storage
+      const hexColor = newColor ? (COLOR_HEX[newColor] ?? newColor) : undefined;
+      if (record.color === hexColor) return;
+      const prevColor = record.color;
+      const itemId = record.id;
+      record.color = hexColor;
+      applyNoteColor(record, hexColor);
+      syncSwatches();
+      void saveItem(ctx, record);
+      pushUndo(ctx, {
+        label: 'color',
+        undo() {
+          const r = ctx.itemsById.get(itemId); if (!r) return [];
+          r.color = prevColor;
+          applyNoteColor(r, prevColor);
+          r.el.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
+            sw.classList.toggle('active', sw.dataset.color === activeSwatchKey(r.color)));
+          void saveItem(ctx, r);
+          return [itemId];
+        },
+        redo() {
+          const r = ctx.itemsById.get(itemId); if (!r) return [];
+          r.color = hexColor;
+          applyNoteColor(r, hexColor);
+          r.el.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
+            sw.classList.toggle('active', sw.dataset.color === activeSwatchKey(r.color)));
+          void saveItem(ctx, r);
+          return [itemId];
+        },
+      });
+    };
+
+    resetSwatch.addEventListener('click', (e) => { e.stopPropagation(); setColor(undefined); });
+    for (const sw of swatchEls) {
+      if (sw.dataset.color === 'reset') continue;
+      sw.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const c = sw.dataset.color!;
+        setColor(activeSwatchKey(record.color) === c ? undefined : c);
+      });
+    }
   }
 
   const delBtn = document.createElement('button');
@@ -878,6 +981,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
       (rec.contentEl as HTMLTextAreaElement).value = (item.contentEl as HTMLTextAreaElement).value;
       rec.contentEl.style.width  = item.contentEl.offsetWidth  + 'px';
       rec.contentEl.style.height = item.contentEl.offsetHeight + 'px';
+      if (item.color) { rec.color = item.color; applyNoteColor(rec, item.color); }
       void saveItem(ctx, rec);
       addToSelection(ctx, rec);
       allSnaps.push(snapItem(ctx, rec));
@@ -926,6 +1030,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
         (rec.contentEl as HTMLTextAreaElement).value = (member.contentEl as HTMLTextAreaElement).value;
         rec.contentEl.style.width  = member.contentEl.offsetWidth  + 'px';
         rec.contentEl.style.height = member.contentEl.offsetHeight + 'px';
+        if (member.color) { rec.color = member.color; applyNoteColor(rec, member.color); }
         rec.groupId = newGroup.id;
         void saveItem(ctx, rec);
         addToSelection(ctx, rec);

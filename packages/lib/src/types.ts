@@ -12,6 +12,7 @@ export interface ItemData {
   h: number;
   zIndex: number;
   groupId?: number;
+  color?: string;
   // note fields
   text?: string;
   width?: number;
@@ -59,6 +60,7 @@ export interface ItemRecord {
   _autoGrowLabel?: () => void;
   mounted: boolean;
   groupId?: number;
+  color?: string;
 }
 
 export interface EdgeRecord {
@@ -87,6 +89,7 @@ export interface SnapItem {
   h?: number;
   zIndex: number;
   groupId?: number;
+  color?: string;
   // note / group label
   text?: string;
   contentWidth?: number;

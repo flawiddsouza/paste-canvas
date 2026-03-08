@@ -296,8 +296,9 @@ export function initToolbarHover(ctx: Ctx): void {
       }
       const w = record.w || record.el.offsetWidth;
       const h = record.h || record.el.offsetHeight;
-      const inZone = cx >= record.x && cx <= record.x + w &&
-                     cy >= record.y - 36 / ctx.scale && cy <= record.y + h;
+      const inZone = (cx >= record.x && cx <= record.x + w &&
+                      cy >= record.y - 36 / ctx.scale && cy <= record.y + h)
+                  || record.el.contains(e.target as Node);
       record.el.classList.toggle('toolbar-active', inZone);
     }
   }, { signal });

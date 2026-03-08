@@ -535,6 +535,42 @@ export const css = `
     margin: 4px 0;
   }
 
+  /* ── Note color variants (CSS color-mix) ── */
+  .paste-canvas-root .item-note.colored .item-inner  {
+    background:   color-mix(in oklch, var(--note-color) 32%, #050505);
+    border-color: color-mix(in oklch, var(--note-color) 62%, #050505);
+  }
+  .paste-canvas-root .item-note.colored .note-handle {
+    background:   color-mix(in oklch, var(--note-color) 38%, #050505);
+    border-color: color-mix(in oklch, var(--note-color) 62%, #050505);
+    color:        color-mix(in oklch, var(--note-color) 72%, #050505);
+  }
+  .paste-canvas-root .item-note.colored textarea {
+    color: color-mix(in oklch, var(--note-color) 92%, #ffffff);
+  }
+
+  /* ── Color swatch buttons ── */
+  .paste-canvas-root .item-color-swatch {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #aaa;
+  }
+  .paste-canvas-root .item-color-swatch:hover  { border-color: rgba(255,255,255,0.65); }
+  .paste-canvas-root .item-color-swatch.active { border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+  .paste-canvas-root .item-color-swatch[data-color="reset"] { background: #2b2b1e; border-color: #554; }
+  .paste-canvas-root .item-color-swatch[data-color="1"] { background: #ff5252; }
+  .paste-canvas-root .item-color-swatch[data-color="2"] { background: #ff9040; }
+  .paste-canvas-root .item-color-swatch[data-color="3"] { background: #ffd433; }
+  .paste-canvas-root .item-color-swatch[data-color="4"] { background: #44cf6e; }
+  .paste-canvas-root .item-color-swatch[data-color="5"] { background: #438dff; }
+  .paste-canvas-root .item-color-swatch[data-color="6"] { background: #a15ef4; }
+  .paste-canvas-root .item-color-swatch[data-color="7"] { background: #d06090; }
+
   /* ── Toast ── */
   .paste-canvas-root .pc-toast {
     position: fixed;
