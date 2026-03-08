@@ -33,22 +33,54 @@ export class PasteCanvas {
       <div class="pc-toolbar">
         <h1>${title}</h1>
         <button class="btn pc-btn-note">+ Note</button>
-        <button class="btn pc-btn-paste-img">Paste Image</button>
+        <button class="btn pc-btn-paste">Paste</button>
         <div class="sep"></div>
-        <button class="btn pc-btn-clear-sel">Deselect</button>
-        <button class="btn pc-btn-delete-sel">Delete Selected</button>
+        <button class="btn pc-btn-delete-sel">Delete</button>
         <div class="sep"></div>
-        <button class="btn pc-btn-reset-view">Reset View</button>
-        <button class="btn pc-btn-fit">Fit (F)</button>
+        <button class="btn pc-btn-reset-view">Home</button>
+        <button class="btn pc-btn-fit">Fit</button>
         <span class="pc-zoom-label">100%</span>
-        <span class="pc-coords-label" style="font-size:11px;color:#555;min-width:80px">0, 0</span>
-        <div class="sep"></div>
-        <small style="color:#666;font-size:11px">Ctrl+V paste \u00b7 Scroll zoom \u00b7 Drag canvas to pan \u00b7 Shift/Ctrl+drag to select</small>
+        <button class="btn pc-btn-help">?</button>
+      </div>
+      <div class="pc-help-modal" hidden>
+        <div class="pc-help-dialog">
+          <div class="pc-help-header">
+            <strong>Keyboard &amp; Mouse</strong>
+            <button class="pc-help-close">\u00d7</button>
+          </div>
+          <div class="pc-help-body">
+            <table class="pc-help-table">
+              <tbody>
+                <tr><th colspan="2">Canvas</th></tr>
+                <tr><td>Scroll</td><td>Zoom in / out</td></tr>
+                <tr><td>Drag canvas</td><td>Pan</td></tr>
+                <tr><td>Middle-click drag</td><td>Pan</td></tr>
+                <tr><th colspan="2">Items</th></tr>
+                <tr><td>Ctrl+V</td><td>Paste image or text</td></tr>
+                <tr><td>Shift/Ctrl+drag</td><td>Marquee select</td></tr>
+                <tr><td>Ctrl+A</td><td>Select all</td></tr>
+                <tr><td>Escape</td><td>Deselect</td></tr>
+                <tr><td>Delete / Backspace</td><td>Delete selected</td></tr>
+                <tr><td>Ctrl+D</td><td>Duplicate selected</td></tr>
+                <tr><td>Ctrl+C</td><td>Copy selected item</td></tr>
+                <tr><td>Arrow keys</td><td>Nudge 1px</td></tr>
+                <tr><td>Shift+Arrow keys</td><td>Nudge 10px</td></tr>
+                <tr><td>Double-click resize handle</td><td>Reset size</td></tr>
+                <tr><th colspan="2">View</th></tr>
+                <tr><td>F</td><td>Fit selection or all items</td></tr>
+                <tr><th colspan="2">History</th></tr>
+                <tr><td>Ctrl+Z</td><td>Undo</td></tr>
+                <tr><td>Ctrl+Y / Ctrl+Shift+Z</td><td>Redo</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
       <div class="pc-tab-bar">
         <button class="pc-add-tab-btn">+</button>
       </div>
       <div class="pc-viewport">
+        <span class="pc-coords-label"></span>
         <div class="pc-surface">
           <svg class="pc-edge-layer">
             <defs>
@@ -139,7 +171,7 @@ export class PasteCanvas {
       });
     }, { signal });
 
-    q('.pc-btn-paste-img').addEventListener('click', async () => {
+    q('.pc-btn-paste').addEventListener('click', async () => {
       try {
         const items_cb = await navigator.clipboard.read();
         for (const ci of items_cb) {
@@ -151,8 +183,6 @@ export class PasteCanvas {
         toast(ctx, 'Use Ctrl+V to paste from clipboard.');
       }
     }, { signal });
-
-    q('.pc-btn-clear-sel').addEventListener('click', () => clearSelection(ctx), { signal });
 
     q('.pc-btn-delete-sel').addEventListener('click', () => {
       if (ctx.selectedItems.size === 0 && ctx.selectedEdges.size === 0) {
@@ -172,6 +202,11 @@ export class PasteCanvas {
     q('.pc-btn-fit').addEventListener('click', () => {
       fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
     }, { signal });
+
+    const helpModal = q<HTMLDivElement>('.pc-help-modal');
+    q('.pc-btn-help').addEventListener('click', () => { helpModal.hidden = false; }, { signal });
+    q('.pc-help-close').addEventListener('click', () => { helpModal.hidden = true; }, { signal });
+    helpModal.addEventListener('click', (e) => { if (e.target === helpModal) helpModal.hidden = true; }, { signal });
 
     ctx.tabBar.querySelector('.pc-add-tab-btn')!
       .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`), { signal });
@@ -232,7 +267,11 @@ export class PasteCanvas {
         if (ctx.selectedEdges.size) { this.deleteSelectedEdges(); return; }
         if (ctx.selectedItems.size) { this.deleteSelectedItems(); }
       }
-      if (e.key === 'Escape') { clearSelection(ctx); }
+      if (e.key === 'Escape') {
+        const modal = container.querySelector<HTMLDivElement>('.pc-help-modal');
+        if (modal && !modal.hidden) { modal.hidden = true; return; }
+        clearSelection(ctx);
+      }
       if (e.key === 'f' || e.key === 'F') {
         fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
         return;

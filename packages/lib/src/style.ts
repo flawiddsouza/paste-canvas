@@ -17,12 +17,12 @@ export const css = `
   .paste-canvas-root .pc-toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 4px 10px;
     background: #252525;
     border-bottom: 1px solid #333;
     flex-shrink: 0;
-    flex-wrap: wrap;
+    overflow: hidden;
   }
 
   .paste-canvas-root .pc-toolbar h1 {
@@ -33,12 +33,12 @@ export const css = `
   }
 
   .paste-canvas-root .btn {
-    padding: 5px 12px;
+    padding: 3px 9px;
     border: 1px solid #444;
     border-radius: 5px;
     background: #333;
     color: #ddd;
-    font-size: 13px;
+    font-size: 12px;
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
@@ -51,8 +51,18 @@ export const css = `
   .paste-canvas-root .pc-zoom-label {
     font-size: 12px;
     color: #888;
-    min-width: 42px;
+    min-width: 38px;
     text-align: right;
+  }
+
+  .paste-canvas-root .pc-coords-label {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    font-size: 11px;
+    color: #888;
+    pointer-events: none;
+    z-index: 10;
   }
 
   /* ── Viewport ── */
@@ -318,6 +328,82 @@ export const css = `
   .paste-canvas-root .pc-surface.overview-lod .img-label {
     display: none !important;
   }
+
+  /* ── Help modal ── */
+  .paste-canvas-root .pc-help-modal {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+  }
+  .paste-canvas-root .pc-help-modal[hidden] { display: none; }
+
+  .paste-canvas-root .pc-help-dialog {
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 8px;
+    min-width: 340px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .paste-canvas-root .pc-help-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #333;
+    font-size: 13px;
+    color: #ddd;
+  }
+
+  .paste-canvas-root .pc-help-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .paste-canvas-root .pc-help-close:hover { color: #ddd; }
+
+  .paste-canvas-root .pc-help-body {
+    overflow-y: auto;
+    padding: 10px 14px;
+  }
+
+  .paste-canvas-root .pc-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .paste-canvas-root .pc-help-table td,
+  .paste-canvas-root .pc-help-table th {
+    padding: 4px 6px;
+    text-align: left;
+  }
+  .paste-canvas-root .pc-help-table td:first-child {
+    color: #aaa;
+    white-space: nowrap;
+    padding-right: 16px;
+    font-family: monospace;
+    font-size: 11px;
+  }
+  .paste-canvas-root .pc-help-table td:last-child { color: #ccc; }
+  .paste-canvas-root .pc-help-table th {
+    color: #666;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-top: 12px;
+  }
+  .paste-canvas-root .pc-help-table tr:first-child th { padding-top: 2px; }
 
   /* ── Toast ── */
   .paste-canvas-root .pc-toast {
