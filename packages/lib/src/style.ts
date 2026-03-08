@@ -188,7 +188,7 @@ export const css = `
     position: absolute;
     top: -30px;
     left: 0;
-    display: none;
+    display: flex;
     gap: 4px;
     background: #333;
     border: 1px solid #555;
@@ -196,9 +196,15 @@ export const css = `
     padding: 3px 5px;
     z-index: 10;
     white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
   }
-  .paste-canvas-root .item.toolbar-active .item-toolbar,
-  .paste-canvas-root .item.selected .item-toolbar { display: flex; }
+  .paste-canvas-root .item.toolbar-active .item-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.15s ease 0.35s;
+  }
 
   .paste-canvas-root .item-btn {
     padding: 2px 8px;
