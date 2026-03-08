@@ -291,9 +291,8 @@ export const css = `
 
   /* ── Edge layer ── */
   .paste-canvas-root .pc-edge-layer {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    position: absolute; top: 0; left: 0; width: 1px; height: 1px;
     overflow: visible; pointer-events: none;
-    transform-origin: 0 0;
   }
   .paste-canvas-root .edge-path { fill: none; stroke: #888; stroke-width: 2; }
   .paste-canvas-root .edge-path.selected { stroke: #2d6be0; }

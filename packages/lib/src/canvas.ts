@@ -10,7 +10,6 @@ export function applyTransform(ctx: Ctx): void {
   const py = Math.round(ctx.panY * dpr) / dpr;
   const t = `translate(${px}px, ${py}px) scale(${ctx.scale})`;
   ctx.surface.style.transform = t;
-  ctx.edgeLayer.style.transform = t;
   ctx.zoomLabel.textContent = Math.round(ctx.scale * 100) + '%';
   const gs = 40 * ctx.scale;
   ctx.viewport.style.backgroundSize = `${gs}px ${gs}px`;
@@ -85,6 +84,9 @@ export function addToSelection(ctx: Ctx, item: ItemRecord): void {
   ctx.selectedItems.add(item);
   item.el.classList.add('selected');
   item.el.style.zIndex = String(++ctx.itemCounter);
+  for (const edge of (ctx.nodeEdgeMap.get(item.id) ?? [])) {
+    if (edge.toNode === item.id) edge.svgEl.style.zIndex = item.el.style.zIndex;
+  }
 }
 
 export function selectItem(ctx: Ctx, item: ItemRecord | null): void {
@@ -299,8 +301,7 @@ export function invalidateOverviewCache(ctx: Ctx): void {
 export function updateCulling(ctx: Ctx): void {
   if (!ctx.items.length) {
     ctx.surface.classList.remove('overview-lod');
-    ctx.surface.style.display   = '';
-    ctx.edgeLayer.style.display = '';
+    ctx.surface.style.display = '';
     ctx.overviewCanvas.style.display = 'none';
     return;
   }
@@ -310,8 +311,7 @@ export function updateCulling(ctx: Ctx): void {
   ctx.surface.classList.toggle('overview-lod', ctx.scale < LOD_SCALE);
 
   if (ctx.scale < OVERVIEW_SCALE) {
-    ctx.surface.style.display   = 'none';
-    ctx.edgeLayer.style.display = 'none';
+    ctx.surface.style.display = 'none';
     ctx.overviewCanvas.style.display = 'block';
     if (!overviewCache.has(ctx.overviewCanvas)) buildOverviewCache(ctx);
     const cache = overviewCache.get(ctx.overviewCanvas);
@@ -323,8 +323,7 @@ export function updateCulling(ctx: Ctx): void {
     return;
   }
 
-  ctx.surface.style.display   = '';
-  ctx.edgeLayer.style.display = '';
+  ctx.surface.style.display = '';
   ctx.overviewCanvas.style.display = 'none';
 
   const BUFFER = 0.5;

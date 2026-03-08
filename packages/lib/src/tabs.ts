@@ -8,7 +8,7 @@ import { toast } from './canvas.js';
 // ── Unload current tab's items/edges ─────────────────────────────────────────
 
 export function unloadItems(ctx: Ctx, protectedBlobs: Set<string> = new Set()): void {
-  for (const e of ctx.edges) e.groupEl?.remove();
+  for (const e of ctx.edges) e.svgEl?.remove();
   ctx.edges = [];
   ctx.selectedEdges.clear();
   ctx.nodeEdgeMap.clear();

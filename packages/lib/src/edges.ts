@@ -48,18 +48,22 @@ export function updateEdgePath(ctx: Ctx, edgeRec: EdgeRecord): void {
 }
 
 export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
-  const g    = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  const hit  = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const NS   = 'http://www.w3.org/2000/svg';
+  const svg  = document.createElementNS(NS, 'svg');
+  const path = document.createElementNS(NS, 'path');
+  const hit  = document.createElementNS(NS, 'path');
   path.setAttribute('class', 'edge-path');
   path.setAttribute('marker-end', `url(#${ctx.arrowheadId})`);
   hit.setAttribute('class', 'edge-hit');
-  g.appendChild(path);
-  g.appendChild(hit);
-  ctx.edgeLayer.appendChild(g);
-  edgeRec.pathEl  = path;
-  edgeRec.hitEl   = hit;
-  edgeRec.groupEl = g;
+  svg.appendChild(path);
+  svg.appendChild(hit);
+  svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none';
+  const toRec = ctx.itemsById.get(edgeRec.toNode);
+  svg.style.zIndex = toRec ? toRec.el.style.zIndex : '0';
+  ctx.edgeLayer.after(svg);
+  edgeRec.svgEl  = svg;
+  edgeRec.pathEl = path;
+  edgeRec.hitEl  = hit;
   hit.addEventListener('click', (e) => {
     e.stopPropagation();
     selectEdge(ctx, edgeRec, e.shiftKey || e.ctrlKey);
@@ -167,7 +171,7 @@ export function createEdge(
 }
 
 export function removeEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
-  edgeRec.groupEl.remove();
+  edgeRec.svgEl.remove();
   ctx.edges = ctx.edges.filter(e => e !== edgeRec);
   ctx.nodeEdgeMap.get(edgeRec.fromNode)?.delete(edgeRec);
   ctx.nodeEdgeMap.get(edgeRec.toNode)?.delete(edgeRec);

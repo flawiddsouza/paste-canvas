@@ -49,15 +49,16 @@ export class PasteCanvas {
         <button class="pc-add-tab-btn">+</button>
       </div>
       <div class="pc-viewport">
-        <div class="pc-surface"></div>
+        <div class="pc-surface">
+          <svg class="pc-edge-layer">
+            <defs>
+              <marker id="${arrowheadId}" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                <polygon points="0 0, 6 2, 0 4" fill="context-stroke"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
         <canvas class="pc-overview-canvas"></canvas>
-        <svg class="pc-edge-layer">
-          <defs>
-            <marker id="${arrowheadId}" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-              <polygon points="0 0, 6 2, 0 4" fill="context-stroke"/>
-            </marker>
-          </defs>
-        </svg>
         <div class="pc-marquee"></div>
       </div>
       <div class="pc-toast"></div>

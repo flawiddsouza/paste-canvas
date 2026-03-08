@@ -67,7 +67,7 @@ export interface EdgeRecord {
   toSide: Side;
   pathEl: SVGPathElement;
   hitEl: SVGPathElement;
-  groupEl: SVGGElement;
+  svgEl: SVGSVGElement;
 }
 
 // ── Snapshots (used by undo/redo commands) ──────────────────────────────────
