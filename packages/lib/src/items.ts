@@ -180,6 +180,40 @@ export function createItem(
       rh.addEventListener('pointerup',     onUp);
       rh.addEventListener('pointercancel', onUp);
     });
+    rh.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const imgEl = contentEl as HTMLImageElement;
+      if (!imgEl.naturalWidth) return;
+      const prevW = inner.offsetWidth;
+      inner.style.width = imgEl.naturalWidth + 'px';
+      const endW = inner.offsetWidth;
+      record.w = record.el.offsetWidth;
+      record.h = record.el.offsetHeight;
+      void saveItem(ctx, record);
+      updateEdgesForItems(ctx, new Set([record]));
+      if (prevW !== endW) {
+        const itemId = record.id;
+        pushUndo(ctx, {
+          label: 'resize',
+          undo() {
+            const r = ctx.items.find(i => i.id === itemId);
+            if (!r) return [];
+            (r.contentEl.parentElement as HTMLElement).style.width = prevW + 'px';
+            void saveItem(ctx, r);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [itemId];
+          },
+          redo() {
+            const r = ctx.items.find(i => i.id === itemId);
+            if (!r) return [];
+            (r.contentEl.parentElement as HTMLElement).style.width = endW + 'px';
+            void saveItem(ctx, r);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [itemId];
+          },
+        });
+      }
+    });
   } else {
     const handle = document.createElement('div');
     handle.className = 'note-handle';
@@ -245,6 +279,41 @@ export function createItem(
       rh.addEventListener('pointermove',   onMove);
       rh.addEventListener('pointerup',     onUp);
       rh.addEventListener('pointercancel', onUp);
+    });
+    rh.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const prevW = contentEl.offsetWidth, prevH = contentEl.offsetHeight;
+      contentEl.style.width  = '';
+      contentEl.style.height = '';
+      const endW = contentEl.offsetWidth, endH = contentEl.offsetHeight;
+      record.w = record.el.offsetWidth;
+      record.h = record.el.offsetHeight;
+      void saveItem(ctx, record);
+      updateEdgesForItems(ctx, new Set([record]));
+      if (prevW !== endW || prevH !== endH) {
+        const itemId = record.id;
+        pushUndo(ctx, {
+          label: 'resize',
+          undo() {
+            const r = ctx.items.find(i => i.id === itemId);
+            if (!r) return [];
+            r.contentEl.style.width  = prevW + 'px';
+            r.contentEl.style.height = prevH + 'px';
+            void saveItem(ctx, r);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [itemId];
+          },
+          redo() {
+            const r = ctx.items.find(i => i.id === itemId);
+            if (!r) return [];
+            r.contentEl.style.width  = '';
+            r.contentEl.style.height = '';
+            void saveItem(ctx, r);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [itemId];
+          },
+        });
+      }
     });
   }
 
