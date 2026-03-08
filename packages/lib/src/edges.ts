@@ -38,8 +38,8 @@ export function edgePathD(
 // ── Update / render ──────────────────────────────────────────────────────────
 
 export function updateEdgePath(ctx: Ctx, edgeRec: EdgeRecord): void {
-  const fromRec = ctx.items.find(i => i.id === edgeRec.fromNode);
-  const toRec   = ctx.items.find(i => i.id === edgeRec.toNode);
+  const fromRec = ctx.itemsById.get(edgeRec.fromNode);
+  const toRec   = ctx.itemsById.get(edgeRec.toNode);
   if (!fromRec || !toRec) return;
   const d = edgePathD(getPortPos(fromRec, edgeRec.fromSide), edgeRec.fromSide,
                       getPortPos(toRec,   edgeRec.toSide),   edgeRec.toSide);
@@ -117,8 +117,8 @@ export function snapEdge(er: EdgeRecord): SnapEdge {
 }
 
 export function restoreEdgeSnap(ctx: Ctx, snap: SnapEdge): EdgeRecord | null {
-  const fromRec = ctx.items.find(i => i.id === snap.fromNode);
-  const toRec   = ctx.items.find(i => i.id === snap.toNode);
+  const fromRec = ctx.itemsById.get(snap.fromNode);
+  const toRec   = ctx.itemsById.get(snap.toNode);
   if (!fromRec || !toRec) return null;
   const er = { ...snap } as EdgeRecord;
   ctx.edges.push(er);
@@ -182,14 +182,18 @@ export function findDropTarget(
   clientX: number, clientY: number,
   excludeRecord: ItemRecord,
 ): { record: ItemRecord; side: Side } | null {
+  const vr = ctx.viewport.getBoundingClientRect();
+  const cx = (clientX - vr.left - ctx.panX) / ctx.scale;
+  const cy = (clientY - vr.top  - ctx.panY) / ctx.scale;
   for (const item of ctx.items) {
-    if (item === excludeRecord) continue;
-    const r = item.el.getBoundingClientRect();
-    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
-      const cx = (clientX - r.left) / r.width;
-      const cy = (clientY - r.top)  / r.height;
+    if (item === excludeRecord || !item.mounted) continue;
+    const w = item.w || 200;
+    const h = item.h || 200;
+    if (cx >= item.x && cx <= item.x + w && cy >= item.y && cy <= item.y + h) {
+      const relX = (cx - item.x) / w;
+      const relY = (cy - item.y) / h;
       const dists: Record<Side, number> = {
-        top: cy, bottom: 1 - cy, left: cx, right: 1 - cx,
+        top: relY, bottom: 1 - relY, left: relX, right: 1 - relX,
       };
       const side = (Object.entries(dists).sort(([, a], [, b]) => a - b)[0][0]) as Side;
       return { record: item, side };

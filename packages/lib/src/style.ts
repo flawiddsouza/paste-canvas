@@ -296,6 +296,24 @@ export const css = `
   .paste-canvas-root .edge-preview { fill: none; stroke: #2d6be0; stroke-width: 2;
                   stroke-dasharray: 6 4; pointer-events: none; }
 
+  /* ── Overview canvas (Canvas2D LOD at very low zoom) ── */
+  .paste-canvas-root .pc-overview-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    display: none;
+    transform-origin: 0 0;
+    image-rendering: pixelated;
+  }
+
+  /* ── LOD: strip decorations when zoomed out below 35% ── */
+  .paste-canvas-root .pc-surface.overview-lod .item-toolbar,
+  .paste-canvas-root .pc-surface.overview-lod .port,
+  .paste-canvas-root .pc-surface.overview-lod .resize-handle,
+  .paste-canvas-root .pc-surface.overview-lod .img-label {
+    display: none !important;
+  }
+
   /* ── Toast ── */
   .paste-canvas-root .pc-toast {
     position: fixed;

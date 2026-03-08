@@ -1,5 +1,5 @@
 import type { Ctx, EdgeRecord } from './types.js';
-import { applyTransform, saveViewport } from './canvas.js';
+import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache } from './canvas.js';
 import { renderEdge, updateEdgesForItems } from './edges.js';
 import { createItem, saveItem } from './items.js';
 import { saveTabHistory, restoreTabHistory } from './history.js';
@@ -13,13 +13,16 @@ export function unloadItems(ctx: Ctx, protectedBlobs: Set<string> = new Set()): 
   ctx.selectedEdges.clear();
   ctx.nodeEdgeMap.clear();
   for (const rec of ctx.items) {
+    rec.mounted = false;
     const src = (rec.contentEl as HTMLImageElement).src;
     if (rec.type === 'img' && src?.startsWith('blob:') && !protectedBlobs.has(src))
       URL.revokeObjectURL(src);
     rec.el.remove();
   }
   ctx.items = [];
+  ctx.itemsById.clear();
   ctx.selectedItems.clear();
+  invalidateOverviewCache(ctx);
 }
 
 // ── Load a tab ────────────────────────────────────────────────────────────────
@@ -46,13 +49,15 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
     let rec: ReturnType<typeof createItem>;
     if (saved.type === 'img') {
       const blob = new Blob([saved.imageData!], { type: saved.imageType || 'image/png' });
-      rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, restore: true });
+      rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
       rec.contentEl.parentElement!.style.width = (saved.width || 300) + 'px';
       rec.el.style.zIndex = String(saved.zIndex);
       const imgEl = rec.contentEl as HTMLImageElement;
       imgEl.onload = () => {
-        rec.w = rec.el.offsetWidth;
-        rec.h = rec.el.offsetHeight;
+        if (rec.mounted) {
+          rec.w = rec.el.offsetWidth;
+          rec.h = rec.el.offsetHeight;
+        }
         updateEdgesForItems(ctx, new Set([rec]));
       };
       imgEl.src = URL.createObjectURL(blob);
@@ -61,7 +66,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
         if (rec._autoGrowLabel) rec._autoGrowLabel();
       }
     } else {
-      rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, restore: true });
+      rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
       (rec.contentEl as HTMLTextAreaElement).value = saved.text || '';
       if (saved.width)  rec.contentEl.style.width  = saved.width  + 'px';
       if (saved.height) rec.contentEl.style.height = saved.height + 'px';
@@ -75,8 +80,8 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   const savedEdges = (await ctx.adapter.getAllEdges()).filter(e => e.tabId === tabId);
   if (savedEdges.length) ctx.edgeCounter = Math.max(ctx.edgeCounter, ...savedEdges.map(e => e.id));
   for (const saved of savedEdges) {
-    const fromRec = ctx.items.find(i => i.id === saved.fromNode);
-    const toRec   = ctx.items.find(i => i.id === saved.toNode);
+    const fromRec = ctx.itemsById.get(saved.fromNode);
+    const toRec   = ctx.itemsById.get(saved.toNode);
     if (!fromRec || !toRec) continue;
     const edgeRec = {
       id: saved.id, tabId: saved.tabId,
@@ -90,6 +95,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
     ctx.nodeEdgeMap.get(toRec.id)!.add(edgeRec);
     renderEdge(ctx, edgeRec);
   }
+  updateCulling(ctx);
 }
 
 // ── Render tab bar ────────────────────────────────────────────────────────────

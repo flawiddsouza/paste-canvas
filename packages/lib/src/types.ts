@@ -55,6 +55,7 @@ export interface ItemRecord {
   contentEl: HTMLElement; // HTMLTextAreaElement for notes, HTMLImageElement for imgs
   labelEl?: HTMLTextAreaElement;
   _autoGrowLabel?: () => void;
+  mounted: boolean;
 }
 
 export interface EdgeRecord {
@@ -138,6 +139,7 @@ export interface Ctx {
   surface: HTMLDivElement;
   viewport: HTMLDivElement;
   edgeLayer: SVGSVGElement;
+  overviewCanvas: HTMLCanvasElement;
   marqueeEl: HTMLDivElement;
   zoomLabel: HTMLSpanElement;
   coordsLabel: HTMLSpanElement;
@@ -153,6 +155,7 @@ export interface Ctx {
   items: ItemRecord[];
   selectedItems: Set<ItemRecord>;
   itemCounter: number;
+  itemsById: Map<number, ItemRecord>;
 
   // Tabs
   tabs: TabData[];

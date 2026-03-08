@@ -1,6 +1,6 @@
 import type { Ctx, StorageAdapter } from './types.js';
 import { injectStyles } from './style.js';
-import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover } from './canvas.js';
+import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
 import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected } from './items.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
@@ -50,6 +50,7 @@ export class PasteCanvas {
       </div>
       <div class="pc-viewport">
         <div class="pc-surface"></div>
+        <canvas class="pc-overview-canvas"></canvas>
         <svg class="pc-edge-layer">
           <defs>
             <marker id="${arrowheadId}" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
@@ -66,10 +67,11 @@ export class PasteCanvas {
 
     // ── Build context ──────────────────────────────────────────────────────
     this.ctx = {
-      surface:     q<HTMLDivElement>('.pc-surface'),
-      viewport:    q<HTMLDivElement>('.pc-viewport'),
-      edgeLayer:   q<SVGSVGElement>('.pc-edge-layer'),
-      marqueeEl:   q<HTMLDivElement>('.pc-marquee'),
+      surface:        q<HTMLDivElement>('.pc-surface'),
+      viewport:       q<HTMLDivElement>('.pc-viewport'),
+      edgeLayer:      q<SVGSVGElement>('.pc-edge-layer'),
+      overviewCanvas: q<HTMLCanvasElement>('.pc-overview-canvas'),
+      marqueeEl:      q<HTMLDivElement>('.pc-marquee'),
       zoomLabel:   q<HTMLSpanElement>('.pc-zoom-label'),
       coordsLabel: q<HTMLSpanElement>('.pc-coords-label'),
       tabBar:      q<HTMLDivElement>('.pc-tab-bar'),
@@ -77,7 +79,7 @@ export class PasteCanvas {
 
       scale: 1, panX: 0, panY: 0,
 
-      items: [], selectedItems: new Set(), itemCounter: 0,
+      items: [], selectedItems: new Set(), itemCounter: 0, itemsById: new Map(),
       tabs: [], currentTabId: null, tabCounter: 0, placeOffset: 0,
       edges: [], selectedEdges: new Set(), edgeCounter: 0,
       nodeEdgeMap: new Map(),
@@ -251,6 +253,7 @@ export class PasteCanvas {
           r.el.style.top  = r.y + 'px';
         }
         updateEdgesForItems(ctx, ctx.selectedItems);
+        invalidateOverviewCache(ctx);
         const after = new Map([ ...ctx.selectedItems ].map(r => [r.id, { x: r.x, y: r.y }]));
         for (const r of ctx.selectedItems) void saveItem(ctx, r);
         pushUndo(ctx, {

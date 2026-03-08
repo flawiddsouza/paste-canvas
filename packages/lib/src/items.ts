@@ -1,6 +1,6 @@
 import type { Ctx, ItemRecord, SnapItem } from './types.js';
 import { pushUndo } from './history.js';
-import { addToSelection, clearSelection, selectItem, viewportCenter } from './canvas.js';
+import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateOverviewCache } from './canvas.js';
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
 import { toast } from './canvas.js';
 
@@ -36,8 +36,10 @@ export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
     if (snap.h) rec.h = snap.h;
     const imgEl = rec.contentEl as HTMLImageElement;
     imgEl.onload = () => {
-      rec.w = rec.el.offsetWidth;
-      rec.h = rec.el.offsetHeight;
+      if (rec.mounted) {
+        rec.w = rec.el.offsetWidth;
+        rec.h = rec.el.offsetHeight;
+      }
       updateEdgesForItems(ctx, new Set([rec]));
     };
     imgEl.src = snap.blobUrl!;
@@ -51,8 +53,10 @@ export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
-  record.w = record.el.offsetWidth;
-  record.h = record.el.offsetHeight;
+  if (record.mounted) {
+    record.w = record.el.offsetWidth;
+    record.h = record.el.offsetHeight;
+  }
   const data = {
     id:     record.id,
     type:   record.type,
@@ -89,6 +93,7 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
 interface CreateItemOpts {
   id?: number;
   restore?: boolean;
+  skipMount?: boolean;
 }
 
 export function createItem(
@@ -291,11 +296,17 @@ export function createItem(
 
   el.appendChild(itb);
   el.appendChild(inner);
-  ctx.surface.appendChild(el);
 
   // record must exist before makeDraggable + port listener closures reference it
-  const record: ItemRecord = { id, el, type, x, y, w: 0, h: 0, contentEl, labelEl };
+  const record: ItemRecord = { id, el, type, x, y, w: 0, h: 0, contentEl, labelEl, mounted: false };
   ctx.items.push(record);
+  ctx.itemsById.set(id, record);
+
+  if (!opts.skipMount) {
+    ctx.surface.appendChild(el);
+    record.mounted = true;
+    invalidateOverviewCache(ctx);
+  }
 
   makeDraggable(ctx, record);
 
@@ -360,7 +371,10 @@ export function removeItem(ctx: Ctx, record: ItemRecord, { skipRevoke = false } 
     const src = (record.contentEl as HTMLImageElement).src;
     if (src.startsWith('blob:')) URL.revokeObjectURL(src);
   }
+  invalidateOverviewCache(ctx);
+  record.mounted = false;
   record.el.remove();
+  ctx.itemsById.delete(record.id);
   ctx.items = ctx.items.filter(i => i !== record);
   ctx.selectedItems.delete(record);
   record.el.classList.remove('selected');
@@ -494,6 +508,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
       if (before && (before.x !== item.x || before.y !== item.y)) hasMoved = true;
     }
     if (hasMoved) {
+      invalidateOverviewCache(ctx);
       const bd = new Map(beforeDrag);
       const ad = new Map(afterDrag);
       pushUndo(ctx, {

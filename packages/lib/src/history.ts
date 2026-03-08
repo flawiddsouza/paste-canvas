@@ -1,6 +1,5 @@
 import type { Ctx, UndoCmd } from './types.js';
-import { applyTransform, saveViewport } from './canvas.js';
-import { toast } from './canvas.js';
+import { applyTransform, saveViewport, toast, invalidateOverviewCache, updateCulling } from './canvas.js';
 
 const HISTORY_LIMIT = 100;
 
@@ -22,7 +21,7 @@ export function restoreTabHistory(ctx: Ctx, tabId: number): void {
 }
 
 export function focusItems(ctx: Ctx, ids: number[]): void {
-  const recs = ids.map(id => ctx.items.find(i => i.id === id)).filter(Boolean) as typeof ctx.items;
+  const recs = ids.map(id => ctx.itemsById.get(id)).filter(Boolean) as typeof ctx.items;
   if (!recs.length) return;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const rec of recs) {
@@ -46,6 +45,8 @@ export function performUndo(ctx: Ctx): void {
   const cmd = ctx.undoStack.pop();
   if (!cmd) return;
   const ids = cmd.undo();
+  invalidateOverviewCache(ctx);
+  updateCulling(ctx);
   ctx.redoStack.push(cmd);
   toast(ctx, 'Undone: ' + (cmd.label ?? 'action'));
   if (ids?.length) focusItems(ctx, ids);
@@ -55,6 +56,8 @@ export function performRedo(ctx: Ctx): void {
   const cmd = ctx.redoStack.pop();
   if (!cmd) return;
   const ids = cmd.redo();
+  invalidateOverviewCache(ctx);
+  updateCulling(ctx);
   ctx.undoStack.push(cmd);
   toast(ctx, 'Redone: ' + (cmd.label ?? 'action'));
   if (ids?.length) focusItems(ctx, ids);
