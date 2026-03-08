@@ -126,6 +126,7 @@ export function renderTabBar(ctx: Ctx): void {
     nameSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       nameSpan.contentEditable = 'true';
+      nameSpan.spellcheck = false;
       nameSpan.focus();
       const range = document.createRange();
       range.selectNodeContents(nameSpan);

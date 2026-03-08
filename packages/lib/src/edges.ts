@@ -114,6 +114,7 @@ export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
   // HTML input for editing only (in canvas-space on the surface, hidden until editing)
   const input = document.createElement('input');
   input.type = 'text';
+  input.spellcheck = false;
   input.className = 'edge-label-input';
   ctx.surface.appendChild(input);
   edgeRec.inputEl = input;

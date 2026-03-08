@@ -155,6 +155,7 @@ export function createItem(
     groupLabel.className = 'group-label';
     groupLabel.placeholder = 'Label\u2026';
     groupLabel.rows = 1;
+    groupLabel.spellcheck = false;
 
     const rh = document.createElement('div');
     rh.className = 'resize-handle';
@@ -372,6 +373,7 @@ export function createItem(
     labelEl.className = 'img-label';
     labelEl.placeholder = 'Label\u2026';
     labelEl.rows = 1;
+    labelEl.spellcheck = false;
     inner.appendChild(labelEl);
 
     const rh = document.createElement('div');
@@ -468,6 +470,7 @@ export function createItem(
     contentEl = document.createElement('textarea');
     (contentEl as HTMLTextAreaElement).placeholder = 'Type a note\u2026';
     (contentEl as HTMLTextAreaElement).rows = 3;
+    (contentEl as HTMLTextAreaElement).spellcheck = false;
     inner.appendChild(contentEl);
 
     const rh = document.createElement('div');
