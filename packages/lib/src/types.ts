@@ -35,6 +35,7 @@ export interface EdgeData {
   fromSide: Side;
   toNode: number;
   toSide: Side;
+  label?: string;
 }
 
 export interface ViewportState {
@@ -67,9 +68,12 @@ export interface EdgeRecord {
   fromSide: Side;
   toNode: number;
   toSide: Side;
+  label?: string;
   pathEl: SVGPathElement;
   hitEl: SVGPathElement;
   svgEl: SVGSVGElement;
+  labelTextEl?: SVGTextElement;
+  inputEl?: HTMLInputElement;
 }
 
 // ── Snapshots (used by undo/redo commands) ──────────────────────────────────
@@ -100,6 +104,7 @@ export interface SnapEdge {
   fromSide: Side;
   toNode: number;
   toSide: Side;
+  label?: string;
 }
 
 export interface UndoCmd {
@@ -171,6 +176,7 @@ export interface Ctx {
   selectedEdges: Set<EdgeRecord>;
   edgeCounter: number;
   nodeEdgeMap: Map<number, Set<EdgeRecord>>;
+  editingEdge?: EdgeRecord;
 
   // History
   undoStack: UndoCmd[];

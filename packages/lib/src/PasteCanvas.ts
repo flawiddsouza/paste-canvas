@@ -260,7 +260,7 @@ export class PasteCanvas {
   private setupKeyboard(container: HTMLElement): void {
     const ctx = this.ctx;
     document.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
       if (e.ctrlKey && e.key === 'z') { e.preventDefault(); performUndo(ctx); return; }
       if (e.ctrlKey && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); performRedo(ctx); return; }
       if (e.ctrlKey && e.key === 'a') {

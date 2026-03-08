@@ -19,10 +19,10 @@ export function getPortPos(record: ItemRecord, side: Side): { x: number; y: numb
 
 // ── Path generation ──────────────────────────────────────────────────────────
 
-export function edgePathD(
+function bezierPoints(
   from: { x: number; y: number }, fromSide: Side,
   to:   { x: number; y: number }, toSide: Side,
-): string {
+): { cp1x: number; cp1y: number; cp2x: number; cp2y: number } {
   const dist   = Math.hypot(to.x - from.x, to.y - from.y);
   const offset = Math.min(Math.max(dist * 0.4, 40), 200);
   const dirs: Record<Side, [number, number]> = {
@@ -30,9 +30,31 @@ export function edgePathD(
   };
   const [fdx, fdy] = dirs[fromSide];
   const [tdx, tdy] = dirs[toSide];
-  const cp1x = from.x + fdx * offset, cp1y = from.y + fdy * offset;
-  const cp2x = to.x   + tdx * offset, cp2y = to.y   + tdy * offset;
+  return {
+    cp1x: from.x + fdx * offset, cp1y: from.y + fdy * offset,
+    cp2x: to.x   + tdx * offset, cp2y: to.y   + tdy * offset,
+  };
+}
+
+export function edgePathD(
+  from: { x: number; y: number }, fromSide: Side,
+  to:   { x: number; y: number }, toSide: Side,
+): string {
+  const { cp1x, cp1y, cp2x, cp2y } = bezierPoints(from, fromSide, to, toSide);
   return `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+}
+
+// ── Bezier midpoint ──────────────────────────────────────────────────────────
+
+export function edgeMidpoint(
+  from: { x: number; y: number }, fromSide: Side,
+  to:   { x: number; y: number }, toSide: Side,
+): { x: number; y: number } {
+  const { cp1x, cp1y, cp2x, cp2y } = bezierPoints(from, fromSide, to, toSide);
+  return {
+    x: 0.125 * from.x + 0.375 * cp1x + 0.375 * cp2x + 0.125 * to.x,
+    y: 0.125 * from.y + 0.375 * cp1y + 0.375 * cp2y + 0.125 * to.y,
+  };
 }
 
 // ── Update / render ──────────────────────────────────────────────────────────
@@ -41,10 +63,24 @@ export function updateEdgePath(ctx: Ctx, edgeRec: EdgeRecord): void {
   const fromRec = ctx.itemsById.get(edgeRec.fromNode);
   const toRec   = ctx.itemsById.get(edgeRec.toNode);
   if (!fromRec || !toRec) return;
-  const d = edgePathD(getPortPos(fromRec, edgeRec.fromSide), edgeRec.fromSide,
-                      getPortPos(toRec,   edgeRec.toSide),   edgeRec.toSide);
+  const from = getPortPos(fromRec, edgeRec.fromSide);
+  const to   = getPortPos(toRec,   edgeRec.toSide);
+  const d = edgePathD(from, edgeRec.fromSide, to, edgeRec.toSide);
   edgeRec.pathEl.setAttribute('d', d);
   edgeRec.hitEl.setAttribute('d', d);
+  if (edgeRec.labelTextEl || edgeRec.inputEl) {
+    const raw = edgeMidpoint(from, edgeRec.fromSide, to, edgeRec.toSide);
+    const mx  = Math.round(raw.x);
+    const my  = Math.round(raw.y);
+    if (edgeRec.labelTextEl) {
+      edgeRec.labelTextEl.setAttribute('x', String(mx));
+      edgeRec.labelTextEl.setAttribute('y', String(my));
+    }
+    if (edgeRec.inputEl) {
+      edgeRec.inputEl.style.left = (mx - 60) + 'px';
+      edgeRec.inputEl.style.top  = (my - 14) + 'px';
+    }
+  }
 }
 
 export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
@@ -55,19 +91,88 @@ export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
   path.setAttribute('class', 'edge-path');
   path.setAttribute('marker-end', `url(#${ctx.arrowheadId})`);
   hit.setAttribute('class', 'edge-hit');
+
+  // SVG text for display
+  const labelText = document.createElementNS(NS, 'text');
+  labelText.setAttribute('class', 'edge-label-text');
+  labelText.setAttribute('text-anchor', 'middle');
+  labelText.setAttribute('dominant-baseline', 'middle');
+  if (edgeRec.label) labelText.textContent = edgeRec.label;
+
   svg.appendChild(path);
   svg.appendChild(hit);
+  svg.appendChild(labelText);
   svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none';
   const toRec = ctx.itemsById.get(edgeRec.toNode);
   svg.style.zIndex = toRec ? toRec.el.style.zIndex : '0';
   ctx.edgeLayer.after(svg);
-  edgeRec.svgEl  = svg;
-  edgeRec.pathEl = path;
-  edgeRec.hitEl  = hit;
+  edgeRec.svgEl       = svg;
+  edgeRec.pathEl      = path;
+  edgeRec.hitEl       = hit;
+  edgeRec.labelTextEl = labelText;
+
+  // HTML input for editing only (in canvas-space on the surface, hidden until editing)
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'edge-label-input';
+  ctx.surface.appendChild(input);
+  edgeRec.inputEl = input;
+
+  let prevLabel = '';
+
   hit.addEventListener('click', (e) => {
     e.stopPropagation();
     selectEdge(ctx, edgeRec, e.shiftKey || e.ctrlKey);
   });
+
+  hit.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    selectEdge(ctx, edgeRec);
+    prevLabel = edgeRec.label ?? '';
+    input.value = prevLabel;
+    input.style.zIndex = String(ctx.itemCounter + 1);
+    labelText.style.display = 'none';
+    input.classList.add('editing');
+    ctx.editingEdge = edgeRec;
+    input.focus();
+    input.select();
+  });
+
+  const commitLabel = () => {
+    const newLabel = input.value.trim();
+    edgeRec.label = newLabel || undefined;
+    labelText.textContent = newLabel;
+    labelText.style.display = '';
+    input.classList.remove('editing');
+    ctx.editingEdge = undefined;
+    saveEdge(ctx, edgeRec);
+    if (newLabel !== prevLabel) {
+      const edgeId = edgeRec.id;
+      const captured = { prev: prevLabel, next: newLabel };
+      const applyLabel = (value: string) => {
+        const er = ctx.edges.find(e => e.id === edgeId);
+        if (!er) return [];
+        er.label = value || undefined;
+        if (er.labelTextEl) er.labelTextEl.textContent = value;
+        if (er.inputEl) er.inputEl.value = value;
+        saveEdge(ctx, er);
+        return [];
+      };
+      pushUndo(ctx, {
+        label: 'label edge',
+        undo() { return applyLabel(captured.prev); },
+        redo() { return applyLabel(captured.next); },
+      });
+    }
+  };
+
+  input.addEventListener('blur', commitLabel);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = edgeRec.label ?? ''; input.blur(); }
+    e.stopPropagation();
+  });
+
   updateEdgePath(ctx, edgeRec);
 }
 
@@ -107,6 +212,7 @@ export function saveEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
     id: edgeRec.id, tabId: edgeRec.tabId,
     fromNode: edgeRec.fromNode, fromSide: edgeRec.fromSide,
     toNode:   edgeRec.toNode,   toSide:   edgeRec.toSide,
+    label:    edgeRec.label,
   });
 }
 
@@ -117,6 +223,7 @@ export function snapEdge(er: EdgeRecord): SnapEdge {
     id: er.id, tabId: er.tabId,
     fromNode: er.fromNode, fromSide: er.fromSide,
     toNode:   er.toNode,   toSide:   er.toSide,
+    label:    er.label,
   };
 }
 
@@ -172,6 +279,7 @@ export function createEdge(
 
 export function removeEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
   edgeRec.svgEl.remove();
+  edgeRec.inputEl?.remove();
   ctx.edges = ctx.edges.filter(e => e !== edgeRec);
   ctx.nodeEdgeMap.get(edgeRec.fromNode)?.delete(edgeRec);
   ctx.nodeEdgeMap.get(edgeRec.toNode)?.delete(edgeRec);

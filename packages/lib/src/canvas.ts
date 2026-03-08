@@ -131,6 +131,7 @@ export function clearSelection(ctx: Ctx): void {
   for (const item of ctx.selectedItems) item.el.classList.remove('selected');
   ctx.selectedItems.clear();
   clearEdgeSelection(ctx);
+  ctx.editingEdge?.inputEl?.blur();
 }
 
 export function addToSelection(ctx: Ctx, item: ItemRecord): void {

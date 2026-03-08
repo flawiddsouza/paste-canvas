@@ -310,6 +310,21 @@ export const css = `
                pointer-events: stroke; cursor: pointer; }
   .paste-canvas-root .edge-preview { fill: none; stroke: #2d6be0; stroke-width: 2;
                   stroke-dasharray: 6 4; pointer-events: none; }
+  .paste-canvas-root .edge-label-text {
+    font-size: 12px; font-family: system-ui, sans-serif; fill: #ccc;
+    paint-order: stroke fill;
+    stroke: rgba(20, 20, 20, 0.75); stroke-width: 3px; stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .paste-canvas-root .edge-label-input {
+    position: absolute;
+    width: 120px; height: 28px; padding: 0 6px; line-height: 24px; box-sizing: border-box;
+    border: 2px solid #2d6be0; border-radius: 4px;
+    background: rgba(20, 20, 20, 0.92); color: #ddd;
+    font-size: 12px; font-family: system-ui, sans-serif; text-align: center;
+    outline: none; pointer-events: none; opacity: 0;
+  }
+  .paste-canvas-root .edge-label-input.editing { pointer-events: all; opacity: 1; }
 
   /* ── Overview canvas (Canvas2D LOD at very low zoom) ── */
   .paste-canvas-root .pc-overview-canvas {
@@ -326,7 +341,8 @@ export const css = `
   .paste-canvas-root .pc-surface.overview-lod .port,
   .paste-canvas-root .pc-surface.overview-lod .resize-handle,
   .paste-canvas-root .pc-surface.overview-lod .img-label,
-  .paste-canvas-root .pc-surface.overview-lod .group-label {
+  .paste-canvas-root .pc-surface.overview-lod .group-label,
+  .paste-canvas-root .pc-surface.overview-lod .edge-label-text {
     display: none !important;
   }
 

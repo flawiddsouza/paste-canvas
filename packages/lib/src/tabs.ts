@@ -7,7 +7,7 @@ import { saveTabHistory, restoreTabHistory } from './history.js';
 // ── Unload current tab's items/edges ─────────────────────────────────────────
 
 export function unloadItems(ctx: Ctx, protectedBlobs: Set<string> = new Set()): void {
-  for (const e of ctx.edges) e.svgEl?.remove();
+  for (const e of ctx.edges) { e.svgEl?.remove(); e.inputEl?.remove(); }
   ctx.edges = [];
   ctx.selectedEdges.clear();
   ctx.nodeEdgeMap.clear();
@@ -100,6 +100,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
       id: saved.id, tabId: saved.tabId,
       fromNode: saved.fromNode, fromSide: saved.fromSide,
       toNode:   saved.toNode,   toSide:   saved.toSide,
+      label:    saved.label,
     } as EdgeRecord;
     ctx.edges.push(edgeRec);
     if (!ctx.nodeEdgeMap.has(fromRec.id)) ctx.nodeEdgeMap.set(fromRec.id, new Set());
