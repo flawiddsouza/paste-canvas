@@ -739,7 +739,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
   let passengers: ItemRecord[] = [];
 
   el.addEventListener('pointerdown', (e) => {
-    if (e.button === 1) return;
+    if (e.button !== 0) return;
     if (e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLButtonElement   ||
         (e.target as HTMLElement).classList.contains('resize-handle')) return;

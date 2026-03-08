@@ -6,6 +6,7 @@ import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage
 import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
+import { initContextMenu } from './context-menu.js';
 
 export interface PasteCanvasOptions {
   title?: string;
@@ -155,6 +156,7 @@ export class PasteCanvas {
     this.setupToolbarButtons(container);
     this.setupPaste();
     this.setupKeyboard(container);
+    initContextMenu(ctx, () => this.deleteSelectedItems(), () => this.deleteSelectedEdges());
   }
 
   private setupToolbarButtons(container: HTMLElement): void {

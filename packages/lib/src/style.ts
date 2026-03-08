@@ -500,6 +500,41 @@ export const css = `
   }
   .paste-canvas-root .pc-confirm-ok:hover { background: #8f2b2b; border-color: #b83a3a; color: #fff; }
 
+  /* ── Context menu ── */
+  .paste-canvas-root .pc-context-menu {
+    position: fixed;
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 4px;
+    min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+    z-index: 400;
+  }
+
+  .paste-canvas-root .pc-ctx-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: #ddd;
+    font-size: 12px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .paste-canvas-root .pc-ctx-item:hover { background: #3a3a3a; }
+  .paste-canvas-root .pc-ctx-item.danger:hover { background: #7a2424; color: #fff; }
+
+  .paste-canvas-root .pc-ctx-sep {
+    height: 1px;
+    background: #3a3a3a;
+    margin: 4px 0;
+  }
+
   /* ── Toast ── */
   .paste-canvas-root .pc-toast {
     position: fixed;
