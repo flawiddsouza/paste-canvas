@@ -129,12 +129,14 @@ export const css = `
   .paste-canvas-root .img-label {
     display: block;
     width: 100%;
-    background: rgba(0,0,0,0.65);
-    color: #eee;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(8px);
+    color: #ccc;
     font-size: 13px;
     line-height: 1.5;
     padding: 5px 10px;
     border: none;
+    border-top: 1px solid rgba(255,255,255,0.12);
     outline: none;
     resize: none;
     font-family: inherit;

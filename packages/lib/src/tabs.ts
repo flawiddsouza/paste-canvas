@@ -66,10 +66,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
         updateEdgesForItems(ctx, new Set([rec]));
       };
       imgEl.src = URL.createObjectURL(blob);
-      if (saved.label && rec.labelEl) {
-        rec.labelEl.value = saved.label;
-        if (rec._autoGrowLabel) rec._autoGrowLabel();
-      }
+      if (saved.label && rec.labelEl) rec.labelEl.value = saved.label;
     } else {
       rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
       (rec.contentEl as HTMLTextAreaElement).value = saved.text || '';

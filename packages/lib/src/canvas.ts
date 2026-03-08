@@ -406,6 +406,8 @@ export function updateCulling(ctx: Ctx): void {
     if (visible && !item.mounted) {
       ctx.surface.appendChild(item.el);
       item.mounted = true;
+      item._autoGrowLabel?.();
+      item._autoGrowLabel = undefined;
     } else if (!visible && item.mounted) {
       item.el.remove();
       item.mounted = false;

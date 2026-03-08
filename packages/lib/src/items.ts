@@ -77,7 +77,7 @@ export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
     };
     imgEl.src = snap.blobUrl!;
     if (snap.imageWidth) imgEl.parentElement!.style.width = snap.imageWidth + 'px';
-    if (snap.label && rec.labelEl) rec.labelEl.value = snap.label;
+    if (snap.label && rec.labelEl) { rec.labelEl.value = snap.label; rec._autoGrowLabel?.(); rec._autoGrowLabel = undefined; }
   }
   void saveItem(ctx, rec);
   return rec;
