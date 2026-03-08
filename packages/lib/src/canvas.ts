@@ -28,6 +28,59 @@ export function saveViewport(ctx: Ctx): void {
   }, 500);
 }
 
+// ── Confirm dialog ──────────────────────────────────────────────────────────
+
+export function showConfirm(ctx: Ctx, message: string, confirmLabel = 'Confirm'): Promise<boolean> {
+  return new Promise(resolve => {
+    const root = ctx.tabBar.parentElement!;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'pc-confirm-modal';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'pc-confirm-dialog';
+
+    const msg = document.createElement('p');
+    msg.className = 'pc-confirm-msg';
+    msg.innerHTML = message;
+
+    const btns = document.createElement('div');
+    btns.className = 'pc-confirm-btns';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn pc-confirm-ok';
+    confirmBtn.textContent = confirmLabel;
+
+    const done = (result: boolean) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(false); }
+    };
+
+    cancelBtn.addEventListener('click', () => done(false));
+    confirmBtn.addEventListener('click', () => done(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    document.addEventListener('keydown', onKey);
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(confirmBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(btns);
+    overlay.appendChild(dialog);
+    root.appendChild(overlay);
+
+    cancelBtn.focus();
+  });
+}
+
 // ── Toast ───────────────────────────────────────────────────────────────────
 
 export function toast(ctx: Ctx, msg: string, ms = 2000): void {

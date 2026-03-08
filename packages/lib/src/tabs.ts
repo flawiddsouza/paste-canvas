@@ -1,9 +1,8 @@
 import type { Ctx, EdgeRecord } from './types.js';
-import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache } from './canvas.js';
+import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache, toast, showConfirm } from './canvas.js';
 import { renderEdge, updateEdgesForItems } from './edges.js';
 import { createItem, saveItem } from './items.js';
 import { saveTabHistory, restoreTabHistory } from './history.js';
-import { toast } from './canvas.js';
 
 // ── Unload current tab's items/edges ─────────────────────────────────────────
 
@@ -144,9 +143,26 @@ export function renderTabBar(ctx: Ctx): void {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'tab-close';
     closeBtn.textContent = '\u00d7';
-    closeBtn.title = 'Close tab';
+    closeBtn.title = 'Delete tab';
     closeBtn.style.display = ctx.tabs.length === 1 ? 'none' : '';
-    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); void deleteTab(ctx, tab.id); });
+    closeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const items = tab.id === ctx.currentTabId
+        ? ctx.items
+        : (await ctx.adapter.getAllItems()).filter(i => i.tabId === tab.id);
+      const notes  = items.filter(i => i.type === 'note').length;
+      const images = items.filter(i => i.type === 'img').length;
+      const parts  = [
+        notes  ? `${notes} ${notes  === 1 ? 'note'  : 'notes'}`  : '',
+        images ? `${images} ${images === 1 ? 'image' : 'images'}` : '',
+      ].filter(Boolean);
+      const safeName = tab.name.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const msg = parts.length
+        ? `Delete <strong>${safeName}</strong>? It contains ${parts.join(' and ')} that will be permanently deleted.`
+        : `Delete <strong>${safeName}</strong>?`;
+      const ok = await showConfirm(ctx, msg, 'Delete tab');
+      if (ok) void deleteTab(ctx, tab.id);
+    });
     tabEl.appendChild(closeBtn);
 
     ctx.tabBar.insertBefore(tabEl, addBtn);

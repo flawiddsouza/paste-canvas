@@ -405,6 +405,46 @@ export const css = `
   }
   .paste-canvas-root .pc-help-table tr:first-child th { padding-top: 2px; }
 
+  /* ── Confirm dialog ── */
+  .paste-canvas-root .pc-confirm-modal {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+  }
+
+  .paste-canvas-root .pc-confirm-dialog {
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 18px 20px;
+    min-width: 260px;
+    max-width: 360px;
+  }
+
+  .paste-canvas-root .pc-confirm-msg {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: #ddd;
+    line-height: 1.5;
+  }
+
+  .paste-canvas-root .pc-confirm-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .paste-canvas-root .pc-confirm-ok {
+    background: #7a2424;
+    border-color: #a03030;
+    color: #ddd;
+  }
+  .paste-canvas-root .pc-confirm-ok:hover { background: #8f2b2b; border-color: #b83a3a; color: #fff; }
+
   /* ── Toast ── */
   .paste-canvas-root .pc-toast {
     position: fixed;
