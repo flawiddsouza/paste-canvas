@@ -417,8 +417,8 @@ export function placeImage(ctx: Ctx, url: string): void {
   imgEl.onload = () => {
     const w = imgEl.naturalWidth;
     imgEl.parentElement!.style.width = w + 'px';
-    rec.x = c.x - w / 2;
-    rec.y = c.y - imgEl.naturalHeight / 2;
+    rec.x = Math.round(c.x - w / 2);
+    rec.y = Math.round(c.y - imgEl.naturalHeight / 2);
     rec.el.style.left = rec.x + 'px';
     rec.el.style.top  = rec.y + 'px';
     void saveItem(ctx, rec);

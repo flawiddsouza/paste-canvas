@@ -3,13 +3,18 @@ import type { Ctx, ItemRecord } from './types.js';
 // ── Transform ───────────────────────────────────────────────────────────────
 
 export function applyTransform(ctx: Ctx): void {
-  const t = `translate(${ctx.panX}px, ${ctx.panY}px) scale(${ctx.scale})`;
+  // Snap translation to physical-pixel boundaries so images & text don't render on
+  // sub-pixel offsets (which causes blur, especially noticeable on images).
+  const dpr = window.devicePixelRatio || 1;
+  const px = Math.round(ctx.panX * dpr) / dpr;
+  const py = Math.round(ctx.panY * dpr) / dpr;
+  const t = `translate(${px}px, ${py}px) scale(${ctx.scale})`;
   ctx.surface.style.transform = t;
   ctx.edgeLayer.style.transform = t;
   ctx.zoomLabel.textContent = Math.round(ctx.scale * 100) + '%';
   const gs = 40 * ctx.scale;
   ctx.viewport.style.backgroundSize = `${gs}px ${gs}px`;
-  ctx.viewport.style.backgroundPosition = `${ctx.panX % gs}px ${ctx.panY % gs}px`;
+  ctx.viewport.style.backgroundPosition = `${px % gs}px ${py % gs}px`;
   ctx.coordsLabel.textContent = `${Math.round(-ctx.panX / ctx.scale)}, ${Math.round(-ctx.panY / ctx.scale)}`;
   updateCulling(ctx);
 }
