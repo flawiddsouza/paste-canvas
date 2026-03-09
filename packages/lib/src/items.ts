@@ -870,6 +870,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     e.preventDefault();
     dragging = true;
     el.setPointerCapture(e.pointerId);
+    document.body.classList.add('paste-canvas-dragging');
 
     const vr = ctx.viewport.getBoundingClientRect();
     startCanvasX = (e.clientX - vr.left - ctx.panX) / ctx.scale;
@@ -915,6 +916,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
   el.addEventListener('pointerup', () => {
     if (!dragging) return;
     dragging = false;
+    document.body.classList.remove('paste-canvas-dragging');
     for (const item of startPositions.keys()) void saveItem(ctx, item);
     const afterDrag = new Map<number, { x: number; y: number }>();
     let hasMoved = false;
@@ -956,7 +958,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     }
   });
 
-  el.addEventListener('pointercancel', () => { dragging = false; });
+  el.addEventListener('pointercancel', () => { dragging = false; document.body.classList.remove('paste-canvas-dragging'); });
 }
 
 // ── Duplicate selected ────────────────────────────────────────────────────────

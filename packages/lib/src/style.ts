@@ -13,6 +13,8 @@ export const css = `
     box-sizing: border-box;
   }
 
+  body.paste-canvas-dragging, body.paste-canvas-dragging * { cursor: grabbing !important; }
+
   /* ── Toolbar ── */
   .paste-canvas-root .pc-toolbar {
     display: flex;
