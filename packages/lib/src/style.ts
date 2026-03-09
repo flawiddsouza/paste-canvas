@@ -132,7 +132,7 @@ export const css = `
     background: rgba(255,255,255,0.08);
     backdrop-filter: blur(8px);
     color: #ccc;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
     padding: 5px 10px;
     border: none;
@@ -187,7 +187,7 @@ export const css = `
     border: none;
     outline: none;
     color: #f0e68c;
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1.5;
     padding: 10px 12px;
     font-family: inherit;
@@ -313,7 +313,7 @@ export const css = `
   .paste-canvas-root .edge-preview { fill: none; stroke: #2d6be0; stroke-width: 2;
                   stroke-dasharray: 6 4; pointer-events: none; }
   .paste-canvas-root .edge-label-text {
-    font-size: 12px; font-family: system-ui, sans-serif; fill: #ccc;
+    font-size: 13px; font-family: system-ui, sans-serif; fill: #ccc;
     paint-order: stroke fill;
     stroke: rgba(20, 20, 20, 0.75); stroke-width: 3px; stroke-linejoin: round;
     pointer-events: none;
@@ -323,7 +323,7 @@ export const css = `
     width: 120px; height: 28px; padding: 0 6px; line-height: 24px; box-sizing: border-box;
     border: 2px solid #2d6be0; border-radius: 4px;
     background: rgba(20, 20, 20, 0.92); color: #ddd;
-    font-size: 12px; font-family: system-ui, sans-serif; text-align: center;
+    font-size: 13px; font-family: system-ui, sans-serif; text-align: center;
     outline: none; pointer-events: none; opacity: 0;
   }
   .paste-canvas-root .edge-label-input.editing { pointer-events: all; opacity: 1; }
@@ -372,7 +372,7 @@ export const css = `
     border: none;
     outline: none;
     color: rgba(255, 255, 255, 0.45);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     font-family: inherit;
     resize: none;
