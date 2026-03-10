@@ -1,6 +1,7 @@
 import type { Ctx, EdgeRecord, ItemRecord, Side, SnapEdge } from './types.js';
 import { pushUndo } from './history.js';
 import { clearSelection } from './canvas.js';
+import { createItem, saveItem, snapItem, restoreItemSnap, removeItem } from './items.js';
 
 // ── Port position ────────────────────────────────────────────────────────────
 
@@ -249,6 +250,7 @@ export function createEdge(
   ctx: Ctx,
   fromRec: ItemRecord, fromSide: Side,
   toRec: ItemRecord,   toSide: Side,
+  { skipUndo = false } = {},
 ): void {
   if (fromRec === toRec) return;
   if (ctx.edges.find(e =>
@@ -266,16 +268,18 @@ export function createEdge(
   ctx.nodeEdgeMap.get(toRec.id)!.add(edgeRec);
   renderEdge(ctx, edgeRec);
   saveEdge(ctx, edgeRec);
-  const snap = snapEdge(edgeRec);
-  pushUndo(ctx, {
-    label: 'connect',
-    undo() {
-      const er = ctx.edges.find(e => e.id === snap.id);
-      if (er) removeEdge(ctx, er);
-      return [snap.fromNode, snap.toNode];
-    },
-    redo() { restoreEdgeSnap(ctx, snap); return [snap.fromNode, snap.toNode]; },
-  });
+  if (!skipUndo) {
+    const snap = snapEdge(edgeRec);
+    pushUndo(ctx, {
+      label: 'connect',
+      undo() {
+        const er = ctx.edges.find(e => e.id === snap.id);
+        if (er) removeEdge(ctx, er);
+        return [snap.fromNode, snap.toNode];
+      },
+      redo() { restoreEdgeSnap(ctx, snap); return [snap.fromNode, snap.toNode]; },
+    });
+  }
 }
 
 export function removeEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
@@ -342,7 +346,52 @@ export function startEdgeDrag(ctx: Ctx, fromRecord: ItemRecord, fromSide: Side, 
     if (ev.pointerId !== pid) return;
     preview.remove();
     const target = findDropTarget(ctx, ev.clientX, ev.clientY, fromRecord);
-    if (target) createEdge(ctx, fromRecord, fromSide, target.record, target.side);
+    if (target) {
+      createEdge(ctx, fromRecord, fromSide, target.record, target.side);
+    } else {
+      // Spawn a new note at the drop position, offset so the opposing port aligns with cursor
+      const vr = ctx.viewport.getBoundingClientRect();
+      const cx = (ev.clientX - vr.left - ctx.panX) / ctx.scale;
+      const cy = (ev.clientY - vr.top  - ctx.panY) / ctx.scale;
+      // Place initially at cursor; rAF will reposition using real rendered size
+      const newRec = createItem(ctx, 'note', cx, cy);
+      const toSide = oppSide[fromSide];
+      createEdge(ctx, fromRecord, fromSide, newRec, toSide, { skipUndo: true });
+      // Reposition after layout so the opposing port lands on the cursor
+      requestAnimationFrame(() => {
+        const w = newRec.el.offsetWidth;
+        const h = newRec.el.offsetHeight;
+        const nudge: Record<Side, [number, number]> = {
+          right:  [0,        -h / 2],
+          left:   [-w,       -h / 2],
+          bottom: [-w / 2,   0],
+          top:    [-w / 2,   -h],
+        };
+        const [nx, ny] = nudge[fromSide];
+        newRec.x = cx + nx;
+        newRec.y = cy + ny;
+        newRec.el.style.left = newRec.x + 'px';
+        newRec.el.style.top  = newRec.y + 'px';
+        updateEdgesForItems(ctx, new Set([newRec]));
+        saveItem(ctx, newRec);
+        const noteSnap = snapItem(ctx, newRec);
+        const edgeRec = ctx.edges.find(e => e.fromNode === fromRecord.id && e.toNode === newRec.id);
+        const edgeSnap = edgeRec ? snapEdge(edgeRec) : null;
+        pushUndo(ctx, {
+          label: 'create note from edge',
+          undo() {
+            const r = ctx.itemsById.get(noteSnap.id);
+            if (r) removeItem(ctx, r); // cascades to remove connected edges
+            return [];
+          },
+          redo() {
+            restoreItemSnap(ctx, noteSnap);
+            if (edgeSnap) restoreEdgeSnap(ctx, edgeSnap);
+            return [noteSnap.id];
+          },
+        });
+      });
+    }
     document.removeEventListener('pointermove',   onMove);
     document.removeEventListener('pointerup',     onUp);
     document.removeEventListener('pointercancel', onUp);
