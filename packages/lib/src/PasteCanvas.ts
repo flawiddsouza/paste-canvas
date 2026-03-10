@@ -116,7 +116,7 @@ export class PasteCanvas {
 
       scale: 1, panX: 0, panY: 0,
 
-      items: [], selectedItems: new Set(), itemCounter: 0, itemsById: new Map(),
+      items: [], selectedItems: new Set(), itemCounter: 0, zCounter: 0, itemsById: new Map(),
       tabs: [], currentTabId: null, tabCounter: 0, placeOffset: 0,
       edges: [], selectedEdges: new Set(), edgeCounter: 0,
       nodeEdgeMap: new Map(),

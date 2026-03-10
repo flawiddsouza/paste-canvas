@@ -131,7 +131,7 @@ export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
     selectEdge(ctx, edgeRec);
     prevLabel = edgeRec.label ?? '';
     input.value = prevLabel;
-    input.style.zIndex = String(ctx.itemCounter + 1);
+    input.style.zIndex = String(ctx.zCounter + 1);
     labelText.style.display = 'none';
     input.classList.add('editing');
     ctx.editingEdge = edgeRec;

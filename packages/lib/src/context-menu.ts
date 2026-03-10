@@ -71,7 +71,7 @@ function syncEdgeZ(ctx: Ctx, item: ItemRecord, z: string): void {
 
 function bringToFront(ctx: Ctx, items: ItemRecord[]): void {
   applyZIndexChange(ctx, items, 'bring to front', (item) => {
-    const z = String(++ctx.itemCounter);
+    const z = String(++ctx.zCounter);
     item.el.style.zIndex = z;
     syncEdgeZ(ctx, item, z);
   });

@@ -166,6 +166,7 @@ export interface Ctx {
   items: ItemRecord[];
   selectedItems: Set<ItemRecord>;
   itemCounter: number;
+  zCounter: number;
   itemsById: Map<number, ItemRecord>;
 
   // Tabs

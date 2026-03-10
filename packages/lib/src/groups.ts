@@ -30,12 +30,11 @@ export function groupSelectedItems(ctx: Ctx): void {
   const memberMinZ = Math.min(...candidates.map(m => parseInt(m.el.style.zIndex) || 0));
   const groupZIndex = Math.max(1, memberMinZ - 1);
 
-  const groupRec = createItem(ctx, 'group', gx, gy, { restore: true });
+  const groupRec = createItem(ctx, 'group', gx, gy, { zIndex: groupZIndex, skipSelect: true });
   groupRec.el.style.width  = gw + 'px';
   groupRec.el.style.height = gh + 'px';
   groupRec.w = gw;
   groupRec.h = gh;
-  groupRec.el.style.zIndex = String(groupZIndex);
 
   for (const item of candidates) {
     item.groupId = groupRec.id;
@@ -59,11 +58,10 @@ export function groupSelectedItems(ctx: Ctx): void {
       return memberIds;
     },
     redo() {
-      const g = createItem(ctx, 'group', gx, gy, { id: groupId, restore: true });
+      const g = createItem(ctx, 'group', gx, gy, { id: groupId, zIndex: groupZIndex, skipSelect: true });
       g.el.style.width  = gw + 'px';
       g.el.style.height = gh + 'px';
       g.w = gw; g.h = gh;
-      g.el.style.zIndex = String(groupZIndex);
       for (const mid of memberIds) {
         const m = ctx.itemsById.get(mid);
         if (m) { m.groupId = groupId; void saveItem(ctx, m); }

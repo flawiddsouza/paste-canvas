@@ -138,7 +138,7 @@ export function addToSelection(ctx: Ctx, item: ItemRecord): void {
   ctx.selectedItems.add(item);
   item.el.classList.add('selected');
   if (item.type !== 'group') {
-    item.el.style.zIndex = String(++ctx.itemCounter);
+    item.el.style.zIndex = String(++ctx.zCounter);
     for (const edge of (ctx.nodeEdgeMap.get(item.id) ?? [])) {
       if (edge.toNode === item.id) edge.svgEl.style.zIndex = item.el.style.zIndex;
     }

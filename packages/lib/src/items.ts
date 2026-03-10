@@ -52,8 +52,7 @@ export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
 }
 
 export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
-  const rec = createItem(ctx, snap.type, snap.x, snap.y, { id: snap.id, restore: true });
-  rec.el.style.zIndex = String(snap.zIndex);
+  const rec = createItem(ctx, snap.type, snap.x, snap.y, { id: snap.id, zIndex: snap.zIndex, skipSelect: true });
   rec.groupId = snap.groupId;
   if (snap.type === 'note') {
     (rec.contentEl as HTMLTextAreaElement).value = snap.text || '';
@@ -129,7 +128,8 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
 
 interface CreateItemOpts {
   id?: number;
-  restore?: boolean;
+  zIndex?: number;
+  skipSelect?: boolean;
   skipMount?: boolean;
 }
 
@@ -147,7 +147,7 @@ export function createItem(
   el.className = `item item-${type}`;
   el.style.left   = x + 'px';
   el.style.top    = y + 'px';
-  el.style.zIndex = String(id);
+  el.style.zIndex = opts.zIndex != null ? String(opts.zIndex) : String(++ctx.zCounter);
 
   // ── Group items: no item-inner, label textarea is contentEl ─────────────
   if (type === 'group') {
@@ -300,11 +300,10 @@ export function createItem(
       pushUndo(ctx, {
         label: 'ungroup',
         undo() {
-          const g = createItem(ctx, 'group', groupSnap.x, groupSnap.y, { id: groupSnap.id, restore: true });
+          const g = createItem(ctx, 'group', groupSnap.x, groupSnap.y, { id: groupSnap.id, zIndex: groupSnap.zIndex, skipSelect: true });
           g.el.style.width  = (groupSnap.w || 200) + 'px';
           g.el.style.height = (groupSnap.h || 100) + 'px';
           g.w = groupSnap.w || 200; g.h = groupSnap.h || 100;
-          g.el.style.zIndex = String(groupSnap.zIndex);
           if (groupSnap.text) (g.contentEl as HTMLTextAreaElement).value = groupSnap.text;
           for (const mid of memberIds) {
             const m = ctx.itemsById.get(mid);
@@ -354,7 +353,7 @@ export function createItem(
       labelTimer = setTimeout(() => void saveItem(ctx, record), 600);
     });
 
-    if (!opts.restore) selectItem(ctx, record);
+    if (!opts.skipSelect) selectItem(ctx, record);
 
     return record;
   }
@@ -744,7 +743,7 @@ export function createItem(
     el.appendChild(dot);
   }
 
-  if (!opts.restore) {
+  if (!opts.skipSelect) {
     selectItem(ctx, record);
     if (type === 'note') {
       (contentEl as HTMLTextAreaElement).focus();
@@ -982,7 +981,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
   // Duplicate standalone items
   for (const item of toClone) {
     if (item.type === 'note') {
-      const rec = createItem(ctx, 'note', item.x + OFFSET, item.y + OFFSET, { restore: true });
+      const rec = createItem(ctx, 'note', item.x + OFFSET, item.y + OFFSET, { skipSelect: true });
       (rec.contentEl as HTMLTextAreaElement).value = (item.contentEl as HTMLTextAreaElement).value;
       rec.contentEl.style.width  = item.contentEl.offsetWidth  + 'px';
       rec.contentEl.style.height = item.contentEl.offsetHeight + 'px';
@@ -991,7 +990,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
       addToSelection(ctx, rec);
       allSnaps.push(snapItem(ctx, rec));
     } else {
-      const rec = createItem(ctx, 'img', item.x + OFFSET, item.y + OFFSET, { restore: true });
+      const rec = createItem(ctx, 'img', item.x + OFFSET, item.y + OFFSET, { skipSelect: true });
       rec.contentEl.parentElement!.style.width = item.contentEl.parentElement!.offsetWidth + 'px';
       if (item.labelEl && rec.labelEl) rec.labelEl.value = item.labelEl.value;
       addToSelection(ctx, rec);
@@ -1021,7 +1020,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
     const gw = group.w || group.el.offsetWidth;
     const gh = group.h || group.el.offsetHeight;
 
-    const newGroup = createItem(ctx, 'group', group.x + OFFSET, group.y + OFFSET, { restore: true });
+    const newGroup = createItem(ctx, 'group', group.x + OFFSET, group.y + OFFSET, { skipSelect: true });
     newGroup.el.style.width  = gw + 'px';
     newGroup.el.style.height = gh + 'px';
     newGroup.w = gw; newGroup.h = gh;
@@ -1031,7 +1030,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
 
     for (const member of members) {
       if (member.type === 'note') {
-        const rec = createItem(ctx, 'note', member.x + OFFSET, member.y + OFFSET, { restore: true });
+        const rec = createItem(ctx, 'note', member.x + OFFSET, member.y + OFFSET, { skipSelect: true });
         (rec.contentEl as HTMLTextAreaElement).value = (member.contentEl as HTMLTextAreaElement).value;
         rec.contentEl.style.width  = member.contentEl.offsetWidth  + 'px';
         rec.contentEl.style.height = member.contentEl.offsetHeight + 'px';
@@ -1041,7 +1040,7 @@ export async function duplicateSelected(ctx: Ctx): Promise<void> {
         addToSelection(ctx, rec);
         allSnaps.push(snapItem(ctx, rec));
       } else if (member.type === 'img') {
-        const rec = createItem(ctx, 'img', member.x + OFFSET, member.y + OFFSET, { restore: true });
+        const rec = createItem(ctx, 'img', member.x + OFFSET, member.y + OFFSET, { skipSelect: true });
         rec.contentEl.parentElement!.style.width = member.contentEl.parentElement!.offsetWidth + 'px';
         if (member.labelEl && rec.labelEl) rec.labelEl.value = member.labelEl.value;
         rec.groupId = newGroup.id;

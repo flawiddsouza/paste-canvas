@@ -47,16 +47,14 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   for (const saved of tabItems) {
     let rec: ReturnType<typeof createItem>;
     if (saved.type === 'group') {
-      rec = createItem(ctx, 'group', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
-      rec.el.style.zIndex = String(saved.zIndex);
+      rec = createItem(ctx, 'group', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
       if (saved.w) { rec.el.style.width  = saved.w + 'px'; rec.w = saved.w; }
       if (saved.h) { rec.el.style.height = saved.h + 'px'; rec.h = saved.h; }
       if (saved.text) (rec.contentEl as HTMLTextAreaElement).value = saved.text;
     } else if (saved.type === 'img') {
       const blob = new Blob([saved.imageData!], { type: saved.imageType || 'image/png' });
-      rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
+      rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
       rec.contentEl.parentElement!.style.width = (saved.width || 300) + 'px';
-      rec.el.style.zIndex = String(saved.zIndex);
       const imgEl = rec.contentEl as HTMLImageElement;
       imgEl.onload = () => {
         if (rec.mounted) {
@@ -68,11 +66,10 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
       imgEl.src = URL.createObjectURL(blob);
       if (saved.label && rec.labelEl) rec.labelEl.value = saved.label;
     } else {
-      rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, restore: true, skipMount: true });
+      rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
       (rec.contentEl as HTMLTextAreaElement).value = saved.text || '';
       if (saved.width)  rec.contentEl.style.width  = saved.width  + 'px';
       if (saved.height) rec.contentEl.style.height = saved.height + 'px';
-      rec.el.style.zIndex = String(saved.zIndex);
       if (saved.color) { rec.color = saved.color; applyNoteColor(rec, saved.color); }
     }
     if (saved.w != null) rec.w = saved.w;
@@ -243,7 +240,10 @@ export async function deleteTab(ctx: Ctx, tabId: number): Promise<void> {
 
 export async function restoreAll(ctx: Ctx): Promise<void> {
   const allItems = await ctx.adapter.getAllItems();
-  for (const item of allItems) ctx.itemCounter = Math.max(ctx.itemCounter, item.id, item.zIndex ?? 0);
+  for (const item of allItems) {
+    ctx.itemCounter = Math.max(ctx.itemCounter, item.id);
+    ctx.zCounter    = Math.max(ctx.zCounter, item.zIndex ?? 0);
+  }
   const allEdges = await ctx.adapter.getAllEdges();
   for (const edge of allEdges) ctx.edgeCounter = Math.max(ctx.edgeCounter, edge.id);
 
