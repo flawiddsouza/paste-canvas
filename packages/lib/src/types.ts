@@ -181,6 +181,7 @@ export interface Ctx {
   edgeCounter: number;
   nodeEdgeMap: Map<number, Set<EdgeRecord>>;
   editingEdge?: EdgeRecord;
+  draggingEdge: boolean;
 
   // History
   undoStack: UndoCmd[];

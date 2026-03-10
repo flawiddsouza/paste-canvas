@@ -119,7 +119,7 @@ export class PasteCanvas {
       items: [], selectedItems: new Set(), itemCounter: 0, zCounter: 0, itemsById: new Map(),
       tabs: [], currentTabId: null, tabCounter: 0, placeOffset: 0,
       edges: [], selectedEdges: new Set(), edgeCounter: 0,
-      nodeEdgeMap: new Map(),
+      nodeEdgeMap: new Map(), draggingEdge: false,
       undoStack: [], redoStack: [], tabHistory: new Map(),
 
       toastTimer: null, vpSaveTimer: null,
