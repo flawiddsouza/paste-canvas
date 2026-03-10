@@ -52,10 +52,31 @@ export function edgeMidpoint(
   to:   { x: number; y: number }, toSide: Side,
 ): { x: number; y: number } {
   const { cp1x, cp1y, cp2x, cp2y } = bezierPoints(from, fromSide, to, toSide);
-  return {
-    x: 0.125 * from.x + 0.375 * cp1x + 0.375 * cp2x + 0.125 * to.x,
-    y: 0.125 * from.y + 0.375 * cp1y + 0.375 * cp2y + 0.125 * to.y,
+  const B = (t: number) => {
+    const u = 1 - t;
+    return {
+      x: u*u*u*from.x + 3*u*u*t*cp1x + 3*u*t*t*cp2x + t*t*t*to.x,
+      y: u*u*u*from.y + 3*u*u*t*cp1y + 3*u*t*t*cp2y + t*t*t*to.y,
+    };
   };
+  const N = 64;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= N; i++) pts.push(B(i / N));
+  const lens: number[] = [0];
+  for (let i = 1; i <= N; i++) {
+    const dx = pts[i].x - pts[i-1].x;
+    const dy = pts[i].y - pts[i-1].y;
+    lens.push(lens[i-1] + Math.hypot(dx, dy));
+  }
+  const half = lens[N] / 2;
+  let lo = 0, hi = N - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (lens[mid] < half) lo = mid; else hi = mid;
+  }
+  const segLen = lens[hi] - lens[lo];
+  const frac   = segLen === 0 ? 0 : (half - lens[lo]) / segLen;
+  return B((lo + frac) / N);
 }
 
 // ── Update / render ──────────────────────────────────────────────────────────
