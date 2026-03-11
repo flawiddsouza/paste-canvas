@@ -2,7 +2,7 @@ import type { Ctx, StorageAdapter } from './types.js';
 import { injectStyles } from './style.js';
 import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
-import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected } from './items.js';
+import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected, PC_MIME_META, PC_MIME_IMAGE } from './items.js';
 import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
@@ -179,9 +179,11 @@ export class PasteCanvas {
     q('.pc-btn-paste').addEventListener('click', async () => {
       try {
         const items_cb = await navigator.clipboard.read();
+        const { w: displayW, label, rawImageUrl } = await this.readPCMeta(items_cb);
+        if (rawImageUrl) { placeImage(ctx, rawImageUrl, displayW, label); return; }
         for (const ci of items_cb) {
           const type = ci.types.find(t => t.startsWith('image/'));
-          if (type) { placeImage(ctx, URL.createObjectURL(await ci.getType(type))); return; }
+          if (type) { placeImage(ctx, URL.createObjectURL(await ci.getType(type)), displayW, label); return; }
         }
         toast(ctx, 'No image in clipboard. Try Ctrl+V instead.');
       } catch {
@@ -221,6 +223,25 @@ export class PasteCanvas {
       .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`), { signal });
   }
 
+  private async readPCMeta(items: ClipboardItem[]): Promise<{ w?: number; h?: number; label?: string; rawImageUrl?: string }> {
+    const out: { w?: number; h?: number; label?: string; rawImageUrl?: string } = {};
+    for (const ci of items) {
+      if (ci.types.includes(PC_MIME_META)) {
+        const meta = JSON.parse(await (await ci.getType(PC_MIME_META)).text());
+        if (meta?.pc === 1) {
+          if (meta.w > 0) out.w = meta.w;
+          if (meta.h > 0) out.h = meta.h;
+          if (meta.label) out.label = meta.label;
+        }
+      }
+      if (out.label && ci.types.includes(PC_MIME_IMAGE)) {
+        const rawBlob = await ci.getType(PC_MIME_IMAGE);
+        out.rawImageUrl = URL.createObjectURL(new Blob([rawBlob], { type: 'image/png' }));
+      }
+    }
+    return out;
+  }
+
   private setupPaste(): void {
     const ctx = this.ctx;
     let middleJustReleased = false;
@@ -230,35 +251,46 @@ export class PasteCanvas {
       if (middleJustReleased) { middleJustReleased = false; return; } // suppress middle-click primary-selection paste (Linux X11)
       if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
       const dt = e.clipboardData!.items;
-      let handled = false;
+
+      // Collect synchronously before any awaits
+      let imageUrl: string | null = null;
+      let textItem: DataTransferItem | null = null;
       for (const item of dt) {
-        if (item.kind === 'file' && item.type.startsWith('image/')) {
-          placeImage(ctx, URL.createObjectURL(item.getAsFile()!));
-          handled = true;
-          break;
-        }
+        if (!imageUrl && item.kind === 'file' && item.type.startsWith('image/'))
+          imageUrl = URL.createObjectURL(item.getAsFile()!);
+        if (!textItem && item.kind === 'string' && item.type === 'text/plain')
+          textItem = item;
       }
-      if (!handled) {
-        for (const item of dt) {
-          if (item.kind === 'string' && item.type === 'text/plain') {
-            item.getAsString((text) => {
-              if (!text.trim()) return;
-              const c = viewportCenter(ctx);
-              const off = ctx.placeOffset++ * 24;
-              const rec = createItem(ctx, 'note', c.x - 90 + off, c.y - 40 + off);
-              (rec.contentEl as HTMLTextAreaElement).value = text;
-              void saveItem(ctx, rec);
-              const snap = snapItem(ctx, rec);
-              pushUndo(ctx, {
-                label: 'create note',
-                undo() { const r = ctx.items.find(i => i.id === snap.id); if (r) removeItem(ctx, r); return []; },
-                redo() { restoreItemSnap(ctx, snap); return [snap.id]; },
-              });
-            });
-            handled = true;
-            break;
-          }
-        }
+
+      if (imageUrl) {
+        void (async () => {
+          let meta: { w?: number; h?: number; label?: string; rawImageUrl?: string } = {};
+          try { meta = await this.readPCMeta(await navigator.clipboard.read()); } catch { /* not supported or permission denied */ }
+          if (meta.rawImageUrl) URL.revokeObjectURL(imageUrl!);
+          placeImage(ctx, meta.rawImageUrl ?? imageUrl!, meta.w, meta.label);
+        })();
+        return;
+      }
+
+      if (textItem) {
+        textItem.getAsString(async (text) => {
+          if (!text.trim()) return;
+          let meta: { w?: number; h?: number } = {};
+          try { meta = await this.readPCMeta(await navigator.clipboard.read()); } catch { /* not supported */ }
+          const c = viewportCenter(ctx);
+          const off = ctx.placeOffset++ * 24;
+          const rec = createItem(ctx, 'note', c.x - 90 + off, c.y - 40 + off);
+          (rec.contentEl as HTMLTextAreaElement).value = text;
+          if (meta.w) (rec.contentEl as HTMLTextAreaElement).style.width  = meta.w + 'px';
+          if (meta.h) (rec.contentEl as HTMLTextAreaElement).style.height = meta.h + 'px';
+          void saveItem(ctx, rec);
+          const snap = snapItem(ctx, rec);
+          pushUndo(ctx, {
+            label: 'create note',
+            undo() { const r = ctx.items.find(i => i.id === snap.id); if (r) removeItem(ctx, r); return []; },
+            redo() { restoreItemSnap(ctx, snap); return [snap.id]; },
+          });
+        });
       }
     }, { signal: ctx.signal });
   }
@@ -292,8 +324,14 @@ export class PasteCanvas {
       }
       if (e.ctrlKey && e.key === 'c' && ctx.selectedItems.size === 1) {
         const item = [...ctx.selectedItems][0];
-        if (item.type === 'img')  void copyImage(ctx, item.contentEl as HTMLImageElement);
-        if (item.type === 'note') void copyText(ctx, item.contentEl as HTMLTextAreaElement);
+        if (item.type === 'img') {
+          const inner = item.contentEl.parentElement as HTMLElement;
+          void copyImage(ctx, item.contentEl as HTMLImageElement, inner.offsetWidth, inner.offsetHeight, item.labelEl?.value || undefined);
+        }
+        if (item.type === 'note') {
+          const ta = item.contentEl as HTMLTextAreaElement;
+          void copyText(ctx, ta, ta.offsetWidth, ta.offsetHeight);
+        }
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && ctx.selectedItems.size > 0) {
         e.preventDefault();

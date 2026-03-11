@@ -4,6 +4,9 @@ import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateO
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
 import { toast } from './canvas.js';
 
+export const PC_MIME_META  = 'web application/x-paste-canvas';
+export const PC_MIME_IMAGE = 'web application/x-paste-canvas-image';
+
 // ── Note color helper ─────────────────────────────────────────────────────────
 
 const COLOR_HEX: Record<string, string> = {
@@ -583,7 +586,7 @@ export function createItem(
     copyBtn.textContent = 'Copy Image';
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      void copyImage(ctx, contentEl as HTMLImageElement);
+      void copyImage(ctx, contentEl as HTMLImageElement, inner.offsetWidth, inner.offsetHeight, labelEl?.value || undefined);
     });
     itb.appendChild(copyBtn);
 
@@ -608,7 +611,8 @@ export function createItem(
     copyBtn.textContent = 'Copy Text';
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      void copyText(ctx, contentEl as HTMLTextAreaElement);
+      const ta = contentEl as HTMLTextAreaElement;
+      void copyText(ctx, ta, ta.offsetWidth, ta.offsetHeight);
     });
     itb.appendChild(copyBtn);
 
@@ -824,47 +828,57 @@ async function copyImageWithLabel(ctx: Ctx, imgEl: HTMLImageElement, label: stri
     const res = await fetch(imgEl.src);
     const blob = await res.blob();
     const bmp = await createImageBitmap(blob);
-    // Scale label metrics to match natural image resolution vs displayed size
+
+    const displayW = imgEl.parentElement?.offsetWidth;
+    const displayH = imgEl.parentElement?.offsetHeight;
+
+    // Raw canvas — original image for canvas reconstruction
+    const rawCvs = document.createElement('canvas');
+    rawCvs.width = bmp.width; rawCvs.height = bmp.height;
+    rawCvs.getContext('2d')!.drawImage(bmp, 0, 0);
+
+    // Composited canvas — label baked in, for external paste targets
     const scale = imgEl.offsetWidth ? bmp.width / imgEl.offsetWidth : 1;
     const PAD_X = Math.round(10 * scale), PAD_Y = Math.round(5 * scale);
     const FONT_SIZE = Math.round(14 * scale), LINE_H = Math.round(21 * scale);
-
-    // Measure text on a temp canvas (setting cvs dimensions resets context state)
     const tmp = document.createElement('canvas').getContext('2d')!;
     tmp.font = `${FONT_SIZE}px system-ui, sans-serif`;
     const lines = wrapText(tmp, label, bmp.width - PAD_X * 2);
     const labelAreaH = PAD_Y + lines.length * LINE_H + PAD_Y;
-
     const cvs = document.createElement('canvas');
-    cvs.width = bmp.width;
-    cvs.height = bmp.height + labelAreaH;
+    cvs.width = bmp.width; cvs.height = bmp.height + labelAreaH;
     const ctx2d = cvs.getContext('2d')!;
-
     ctx2d.drawImage(bmp, 0, 0);
-
-    // Label background
     ctx2d.fillStyle = '#3b3b3b';
     ctx2d.fillRect(0, bmp.height, bmp.width, labelAreaH);
-    // Top border
     ctx2d.fillStyle = 'rgba(255,255,255,0.12)';
     ctx2d.fillRect(0, bmp.height, bmp.width, 1);
-
     ctx2d.fillStyle = '#cccccc';
     ctx2d.font = `${FONT_SIZE}px system-ui, sans-serif`;
     for (let i = 0; i < lines.length; i++) {
       ctx2d.fillText(lines[i], PAD_X, bmp.height + PAD_Y + FONT_SIZE + i * LINE_H);
     }
 
-    cvs.toBlob(async (pngBlob) => {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob! })]);
-      toast(ctx, 'Image with label copied!');
-    }, 'image/png');
+    const toBlob = (c: HTMLCanvasElement) => new Promise<Blob>(resolve => c.toBlob(b => resolve(b!), 'image/png'));
+    const [compositedBlob, rawBlob] = await Promise.all([toBlob(cvs), toBlob(rawCvs)]);
+
+    const meta: Record<string, unknown> = { pc: 1 };
+    if (displayW) meta.w = Math.round(displayW);
+    if (displayH) meta.h = Math.round(displayH);
+    if (label) meta.label = label;
+
+    await navigator.clipboard.write([new ClipboardItem({
+      'image/png': compositedBlob,
+      [PC_MIME_META]:  new Blob([JSON.stringify(meta)], { type: 'application/x-paste-canvas' }),
+      [PC_MIME_IMAGE]: new Blob([rawBlob], { type: 'application/x-paste-canvas-image' }),
+    })]);
+    toast(ctx, 'Image with label copied!');
   } catch (err) {
     toast(ctx, 'Copy failed: ' + (err as Error).message);
   }
 }
 
-export async function copyImage(ctx: Ctx, imgEl: HTMLImageElement): Promise<void> {
+export async function copyImage(ctx: Ctx, imgEl: HTMLImageElement, displayW?: number, displayH?: number, label?: string): Promise<void> {
   try {
     const res = await fetch(imgEl.src);
     const blob = await res.blob();
@@ -873,7 +887,13 @@ export async function copyImage(ctx: Ctx, imgEl: HTMLImageElement): Promise<void
     cvs.width = bmp.width; cvs.height = bmp.height;
     cvs.getContext('2d')!.drawImage(bmp, 0, 0);
     cvs.toBlob(async (pngBlob) => {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob! })]);
+      const mimeMap: Record<string, Blob> = { 'image/png': pngBlob! };
+      if (displayW && displayH) {
+        const meta: Record<string, unknown> = { pc: 1, w: Math.round(displayW), h: Math.round(displayH) };
+        if (label) meta.label = label;
+        mimeMap[PC_MIME_META] = new Blob([JSON.stringify(meta)], { type: 'application/x-paste-canvas' });
+      }
+      await navigator.clipboard.write([new ClipboardItem(mimeMap)]);
       toast(ctx, 'Image copied to clipboard!');
     }, 'image/png');
   } catch (err) {
@@ -881,26 +901,44 @@ export async function copyImage(ctx: Ctx, imgEl: HTMLImageElement): Promise<void
   }
 }
 
-export async function copyText(ctx: Ctx, textarea: HTMLTextAreaElement): Promise<void> {
+export async function copyText(ctx: Ctx, textarea: HTMLTextAreaElement, displayW?: number, displayH?: number): Promise<void> {
   const text = textarea.value;
   if (!text.trim()) { toast(ctx, 'Nothing to copy'); return; }
-  await navigator.clipboard.writeText(text);
+  try {
+    const mimeMap: Record<string, Blob> = { 'text/plain': new Blob([text], { type: 'text/plain' }) };
+    if (displayW && displayH) {
+      mimeMap[PC_MIME_META] = new Blob(
+        [JSON.stringify({ pc: 1, w: Math.round(displayW), h: Math.round(displayH) })],
+        { type: 'application/x-paste-canvas' }
+      );
+    }
+    await navigator.clipboard.write([new ClipboardItem(mimeMap)]);
+  } catch {
+    await navigator.clipboard.writeText(text);
+  }
   toast(ctx, 'Text copied to clipboard!');
 }
 
 // ── Image placer ──────────────────────────────────────────────────────────────
 
-export function placeImage(ctx: Ctx, url: string): void {
+export function placeImage(ctx: Ctx, url: string, displayW?: number, label?: string): void {
   const c   = viewportCenter(ctx);
   const rec = createItem(ctx, 'img', c.x - 150, c.y - 100);
   const imgEl = rec.contentEl as HTMLImageElement;
   imgEl.onload = () => {
-    const w = imgEl.naturalWidth;
+    const w = displayW ?? imgEl.naturalWidth;
+    const h = displayW ? Math.round(imgEl.naturalHeight * (w / imgEl.naturalWidth)) : imgEl.naturalHeight;
     imgEl.parentElement!.style.width = w + 'px';
     rec.x = Math.round(c.x - w / 2);
-    rec.y = Math.round(c.y - imgEl.naturalHeight / 2);
+    rec.y = Math.round(c.y - h / 2);
     rec.el.style.left = rec.x + 'px';
     rec.el.style.top  = rec.y + 'px';
+    if (label && rec.labelEl) {
+      rec.labelEl.value = label;
+      rec._autoGrowLabel?.();
+      rec._autoGrowLabel = undefined;
+      rec.el.querySelector<HTMLButtonElement>('.pc-btn-copy-label')?.style.setProperty('display', '');
+    }
     void saveItem(ctx, rec);
     const snap = snapItem(ctx, rec);
     pushUndo(ctx, {
