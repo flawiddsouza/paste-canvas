@@ -286,7 +286,7 @@ export function initViewport(ctx: Ctx): void {
 export function initToolbarHover(ctx: Ctx): void {
   const { signal } = ctx;
   ctx.viewport.addEventListener('pointermove', (e) => {
-    if (ctx.draggingEdge) return;
+    if (ctx.draggingEdge || document.body.classList.contains('paste-canvas-dragging')) return;
     const vr = ctx.viewport.getBoundingClientRect();
     const cx = (e.clientX - vr.left - ctx.panX) / ctx.scale;
     const cy = (e.clientY - vr.top  - ctx.panY) / ctx.scale;

@@ -870,6 +870,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     dragging = true;
     el.setPointerCapture(e.pointerId);
     document.body.classList.add('paste-canvas-dragging');
+    for (const r of ctx.items) r.el.classList.remove('toolbar-active');
 
     const vr = ctx.viewport.getBoundingClientRect();
     startCanvasX = (e.clientX - vr.left - ctx.panX) / ctx.scale;
