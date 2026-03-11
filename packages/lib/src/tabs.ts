@@ -64,7 +64,10 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
         updateEdgesForItems(ctx, new Set([rec]));
       };
       imgEl.src = URL.createObjectURL(blob);
-      if (saved.label && rec.labelEl) rec.labelEl.value = saved.label;
+      if (saved.label && rec.labelEl) {
+        rec.labelEl.value = saved.label;
+        rec.el.querySelector<HTMLButtonElement>('.pc-btn-copy-label')?.style.setProperty('display', '');
+      }
     } else {
       rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
       (rec.contentEl as HTMLTextAreaElement).value = saved.text || '';

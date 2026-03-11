@@ -76,7 +76,12 @@ export function restoreItemSnap(ctx: Ctx, snap: SnapItem): ItemRecord {
     };
     imgEl.src = snap.blobUrl!;
     if (snap.imageWidth) imgEl.parentElement!.style.width = snap.imageWidth + 'px';
-    if (snap.label && rec.labelEl) { rec.labelEl.value = snap.label; rec._autoGrowLabel?.(); rec._autoGrowLabel = undefined; }
+    if (snap.label && rec.labelEl) {
+      rec.labelEl.value = snap.label;
+      rec._autoGrowLabel?.();
+      rec._autoGrowLabel = undefined;
+      rec.el.querySelector<HTMLButtonElement>('.pc-btn-copy-label')?.style.setProperty('display', '');
+    }
   }
   void saveItem(ctx, rec);
   return rec;
@@ -570,6 +575,8 @@ export function createItem(
   itb.className = 'item-toolbar';
   itb.addEventListener('pointerdown', (e) => { if (e.button !== 1) e.stopPropagation(); });
 
+  let copyLabelBtn: HTMLButtonElement | undefined;
+
   if (type === 'img') {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'item-btn';
@@ -579,6 +586,16 @@ export function createItem(
       void copyImage(ctx, contentEl as HTMLImageElement);
     });
     itb.appendChild(copyBtn);
+
+    copyLabelBtn = document.createElement('button');
+    copyLabelBtn.className = 'item-btn pc-btn-copy-label';
+    copyLabelBtn.textContent = 'Copy with Label';
+    copyLabelBtn.style.display = 'none';
+    copyLabelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void copyImageWithLabel(ctx, contentEl as HTMLImageElement, labelEl?.value ?? '');
+    });
+    itb.appendChild(copyLabelBtn);
 
     const labelBtn = document.createElement('button');
     labelBtn.className = 'item-btn';
@@ -724,6 +741,7 @@ export function createItem(
     let labelTimer: ReturnType<typeof setTimeout> | null = null;
     labelEl.addEventListener('input', () => {
       autoGrow();
+      if (copyLabelBtn) copyLabelBtn.style.display = labelEl!.value ? '' : 'none';
       clearTimeout(labelTimer ?? undefined);
       labelTimer = setTimeout(() => void saveItem(ctx, record), 600);
     });
@@ -781,6 +799,70 @@ export function removeItem(ctx: Ctx, record: ItemRecord, { skipRevoke = false } 
 }
 
 // ── Copy helpers ──────────────────────────────────────────────────────────────
+
+function wrapText(ctx2d: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    const words = paragraph.split(' ');
+    let current = '';
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word;
+      if (ctx2d.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
+async function copyImageWithLabel(ctx: Ctx, imgEl: HTMLImageElement, label: string): Promise<void> {
+  try {
+    const res = await fetch(imgEl.src);
+    const blob = await res.blob();
+    const bmp = await createImageBitmap(blob);
+    // Scale label metrics to match natural image resolution vs displayed size
+    const scale = imgEl.offsetWidth ? bmp.width / imgEl.offsetWidth : 1;
+    const PAD_X = Math.round(10 * scale), PAD_Y = Math.round(5 * scale);
+    const FONT_SIZE = Math.round(14 * scale), LINE_H = Math.round(21 * scale);
+
+    // Measure text on a temp canvas (setting cvs dimensions resets context state)
+    const tmp = document.createElement('canvas').getContext('2d')!;
+    tmp.font = `${FONT_SIZE}px system-ui, sans-serif`;
+    const lines = wrapText(tmp, label, bmp.width - PAD_X * 2);
+    const labelAreaH = PAD_Y + lines.length * LINE_H + PAD_Y;
+
+    const cvs = document.createElement('canvas');
+    cvs.width = bmp.width;
+    cvs.height = bmp.height + labelAreaH;
+    const ctx2d = cvs.getContext('2d')!;
+
+    ctx2d.drawImage(bmp, 0, 0);
+
+    // Label background
+    ctx2d.fillStyle = '#3b3b3b';
+    ctx2d.fillRect(0, bmp.height, bmp.width, labelAreaH);
+    // Top border
+    ctx2d.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx2d.fillRect(0, bmp.height, bmp.width, 1);
+
+    ctx2d.fillStyle = '#cccccc';
+    ctx2d.font = `${FONT_SIZE}px system-ui, sans-serif`;
+    for (let i = 0; i < lines.length; i++) {
+      ctx2d.fillText(lines[i], PAD_X, bmp.height + PAD_Y + FONT_SIZE + i * LINE_H);
+    }
+
+    cvs.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob! })]);
+      toast(ctx, 'Image with label copied!');
+    }, 'image/png');
+  } catch (err) {
+    toast(ctx, 'Copy failed: ' + (err as Error).message);
+  }
+}
 
 export async function copyImage(ctx: Ctx, imgEl: HTMLImageElement): Promise<void> {
   try {
