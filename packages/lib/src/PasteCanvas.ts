@@ -223,7 +223,11 @@ export class PasteCanvas {
 
   private setupPaste(): void {
     const ctx = this.ctx;
+    let middleJustReleased = false;
+    document.addEventListener('mouseup', (e) => { if (e.button === 1) middleJustReleased = true; }, { signal: ctx.signal });
+    document.addEventListener('keydown', () => { middleJustReleased = false; }, { signal: ctx.signal });
     document.addEventListener('paste', (e) => {
+      if (middleJustReleased) { middleJustReleased = false; return; } // suppress middle-click primary-selection paste (Linux X11)
       if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
       const dt = e.clipboardData!.items;
       let handled = false;
