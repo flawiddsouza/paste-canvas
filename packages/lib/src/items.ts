@@ -7,6 +7,8 @@ import { toast } from './canvas.js';
 export const PC_MIME_META  = 'web application/x-paste-canvas';
 export const PC_MIME_IMAGE = 'web application/x-paste-canvas-image';
 
+const GROUP_PAD = 24;
+
 // ── Note color helper ─────────────────────────────────────────────────────────
 
 const COLOR_HEX: Record<string, string> = {
@@ -132,6 +134,45 @@ export async function saveItem(ctx: Ctx, record: ItemRecord): Promise<void> {
   ctx.adapter.putItem(data);
 }
 
+function expandGroupToFit(ctx: Ctx, member: ItemRecord): ItemRecord | null {
+  if (member.groupId == null) return null;
+  const group = ctx.itemsById.get(member.groupId);
+  if (!group) return null;
+  const iRight  = member.x + (member.w || member.el.offsetWidth  || 200);
+  const iBottom = member.y + (member.h || member.el.offsetHeight || 200);
+  let changed = false;
+  if (iRight + GROUP_PAD > group.x + group.w) {
+    group.w = iRight + GROUP_PAD - group.x;
+    group.el.style.width = group.w + 'px';
+    changed = true;
+  }
+  if (iBottom + GROUP_PAD > group.y + group.h) {
+    group.h = iBottom + GROUP_PAD - group.y;
+    group.el.style.height = group.h + 'px';
+    changed = true;
+  }
+  return changed ? group : null;
+}
+
+function captureGroupSnap(ctx: Ctx, record: ItemRecord): { id: number; w: number; h: number } | null {
+  if (record.groupId == null) return null;
+  const g = ctx.itemsById.get(record.groupId);
+  return g ? { id: g.id, w: g.w, h: g.h } : null;
+}
+
+function captureGroupSize(ctx: Ctx, id: number): { w: number; h: number } | null {
+  const g = ctx.itemsById.get(id);
+  return g ? { w: g.w, h: g.h } : null;
+}
+
+function applyGroupSize(ctx: Ctx, id: number, w: number, h: number): void {
+  const g = ctx.itemsById.get(id);
+  if (!g) return;
+  g.w = w; g.h = h;
+  g.el.style.width = w + 'px'; g.el.style.height = h + 'px';
+  void saveItem(ctx, g);
+}
+
 // ── Create item ───────────────────────────────────────────────────────────────
 
 interface CreateItemOpts {
@@ -205,11 +246,18 @@ export function createItem(
       rh.setPointerCapture(e.pointerId);
       const startX = e.clientX, startY = e.clientY;
       const startW = el.offsetWidth, startH = el.offsetHeight;
+      let minW = 120, minH = 80;
+      for (const m of ctx.items.filter(i => i.groupId === record.id)) {
+        const mw = m.w || m.el.offsetWidth || 200;
+        const mh = m.h || m.el.offsetHeight || 200;
+        minW = Math.max(minW, m.x - record.x + mw + GROUP_PAD);
+        minH = Math.max(minH, m.y - record.y + mh + GROUP_PAD);
+      }
       const onMove = (ev: PointerEvent) => {
         const dw = (ev.clientX - startX) / ctx.scale;
         const dh = (ev.clientY - startY) / ctx.scale;
-        el.style.width  = Math.max(120, startW + dw) + 'px';
-        el.style.height = Math.max(80,  startH + dh) + 'px';
+        el.style.width  = Math.max(minW, startW + dw) + 'px';
+        el.style.height = Math.max(minH, startH + dh) + 'px';
         record.w = el.offsetWidth;
         record.h = el.offsetHeight;
       };
@@ -221,18 +269,20 @@ export function createItem(
           pushUndo(ctx, {
             label: 'resize',
             undo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               r.el.style.width  = startW + 'px';
               r.el.style.height = startH + 'px';
+              r.w = startW; r.h = startH;
               void saveItem(ctx, r);
               return [itemId];
             },
             redo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               r.el.style.width  = endW + 'px';
               r.el.style.height = endH + 'px';
+              r.w = endW; r.h = endH;
               void saveItem(ctx, r);
               return [itemId];
             },
@@ -251,7 +301,6 @@ export function createItem(
       e.stopPropagation();
       const members = ctx.items.filter(i => i.groupId === record.id);
       if (members.length === 0) return;
-      const PAD = 24;
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const m of members) {
         const mw = m.w || m.el.offsetWidth || 200;
@@ -259,9 +308,9 @@ export function createItem(
         minX = Math.min(minX, m.x); minY = Math.min(minY, m.y);
         maxX = Math.max(maxX, m.x + mw); maxY = Math.max(maxY, m.y + mh);
       }
-      const newX = minX - PAD, newY = minY - PAD;
-      const newW = maxX - minX + PAD * 2;
-      const newH = maxY - minY + PAD * 2;
+      const newX = minX - GROUP_PAD, newY = minY - GROUP_PAD;
+      const newW = maxX - minX + GROUP_PAD * 2;
+      const newH = maxY - minY + GROUP_PAD * 2;
       const prevX = record.x, prevY = record.y;
       const prevW = record.w, prevH = record.h;
       if (newX === prevX && newY === prevY && newW === prevW && newH === prevH) return;
@@ -394,34 +443,45 @@ export function createItem(
       rh.setPointerCapture(e.pointerId);
       const startX = e.clientX;
       const startW = inner.offsetWidth;
+      const groupSnap = captureGroupSnap(ctx, record);
       const onMove = (ev: PointerEvent) => {
         const dw = (ev.clientX - startX) / ctx.scale;
         inner.style.width = Math.max(80, startW + dw) + 'px';
         record.w = record.el.offsetWidth;
         record.h = record.el.offsetHeight;
+        expandGroupToFit(ctx, record);
         updateEdgesForItems(ctx, new Set([record]));
       };
       const onUp = () => {
         const endW = inner.offsetWidth;
         void saveItem(ctx, record);
+        if (groupSnap) {
+          const g = ctx.itemsById.get(groupSnap.id);
+          if (g && (g.w !== groupSnap.w || g.h !== groupSnap.h)) void saveItem(ctx, g);
+        }
         updateEdgesForItems(ctx, new Set([record]));
         if (endW !== startW) {
           const itemId = record.id;
+          const groupEnd = groupSnap ? captureGroupSize(ctx, groupSnap.id) : null;
           pushUndo(ctx, {
             label: 'resize',
             undo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               (r.contentEl.parentElement as HTMLElement).style.width = startW + 'px';
+              r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
               void saveItem(ctx, r);
+              if (groupSnap) applyGroupSize(ctx, groupSnap.id, groupSnap.w, groupSnap.h);
               updateEdgesForItems(ctx, new Set([r]));
               return [itemId];
             },
             redo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               (r.contentEl.parentElement as HTMLElement).style.width = endW + 'px';
+              r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
               void saveItem(ctx, r);
+              if (groupSnap && groupEnd) applyGroupSize(ctx, groupSnap.id, groupEnd.w, groupEnd.h);
               updateEdgesForItems(ctx, new Set([r]));
               return [itemId];
             },
@@ -439,30 +499,38 @@ export function createItem(
       e.stopPropagation();
       const imgEl = contentEl as HTMLImageElement;
       if (!imgEl.naturalWidth) return;
+      const groupSnap = captureGroupSnap(ctx, record);
       const prevW = inner.offsetWidth;
       inner.style.width = imgEl.naturalWidth + 'px';
       const endW = inner.offsetWidth;
       record.w = record.el.offsetWidth;
       record.h = record.el.offsetHeight;
       void saveItem(ctx, record);
+      const expandedGroup = expandGroupToFit(ctx, record);
+      if (expandedGroup) void saveItem(ctx, expandedGroup);
       updateEdgesForItems(ctx, new Set([record]));
       if (prevW !== endW) {
         const itemId = record.id;
+        const groupEnd = groupSnap ? captureGroupSize(ctx, groupSnap.id) : null;
         pushUndo(ctx, {
           label: 'resize',
           undo() {
-            const r = ctx.items.find(i => i.id === itemId);
+            const r = ctx.itemsById.get(itemId);
             if (!r) return [];
             (r.contentEl.parentElement as HTMLElement).style.width = prevW + 'px';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
             void saveItem(ctx, r);
+            if (groupSnap) applyGroupSize(ctx, groupSnap.id, groupSnap.w, groupSnap.h);
             updateEdgesForItems(ctx, new Set([r]));
             return [itemId];
           },
           redo() {
-            const r = ctx.items.find(i => i.id === itemId);
+            const r = ctx.itemsById.get(itemId);
             if (!r) return [];
             (r.contentEl.parentElement as HTMLElement).style.width = endW + 'px';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
             void saveItem(ctx, r);
+            if (groupSnap && groupEnd) applyGroupSize(ctx, groupSnap.id, groupEnd.w, groupEnd.h);
             updateEdgesForItems(ctx, new Set([r]));
             return [itemId];
           },
@@ -491,6 +559,7 @@ export function createItem(
       rh.setPointerCapture(e.pointerId);
       const startX = e.clientX, startY = e.clientY;
       const startW = contentEl.offsetWidth, startH = contentEl.offsetHeight;
+      const groupSnap = captureGroupSnap(ctx, record);
       const onMove = (ev: PointerEvent) => {
         const dw = (ev.clientX - startX) / ctx.scale;
         const dh = (ev.clientY - startY) / ctx.scale;
@@ -498,31 +567,41 @@ export function createItem(
         contentEl.style.height = Math.max(100, startH + dh) + 'px';
         record.w = record.el.offsetWidth;
         record.h = record.el.offsetHeight;
+        expandGroupToFit(ctx, record);
         updateEdgesForItems(ctx, new Set([record]));
       };
       const onUp = () => {
         const endW = contentEl.offsetWidth, endH = contentEl.offsetHeight;
         void saveItem(ctx, record);
+        if (groupSnap) {
+          const g = ctx.itemsById.get(groupSnap.id);
+          if (g && (g.w !== groupSnap.w || g.h !== groupSnap.h)) void saveItem(ctx, g);
+        }
         updateEdgesForItems(ctx, new Set([record]));
         if (endW !== startW || endH !== startH) {
           const itemId = record.id;
+          const groupEnd = groupSnap ? captureGroupSize(ctx, groupSnap.id) : null;
           pushUndo(ctx, {
             label: 'resize',
             undo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               r.contentEl.style.width  = startW + 'px';
               r.contentEl.style.height = startH + 'px';
+              r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
               void saveItem(ctx, r);
+              if (groupSnap) applyGroupSize(ctx, groupSnap.id, groupSnap.w, groupSnap.h);
               updateEdgesForItems(ctx, new Set([r]));
               return [itemId];
             },
             redo() {
-              const r = ctx.items.find(i => i.id === itemId);
+              const r = ctx.itemsById.get(itemId);
               if (!r) return [];
               r.contentEl.style.width  = endW + 'px';
               r.contentEl.style.height = endH + 'px';
+              r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
               void saveItem(ctx, r);
+              if (groupSnap && groupEnd) applyGroupSize(ctx, groupSnap.id, groupEnd.w, groupEnd.h);
               updateEdgesForItems(ctx, new Set([r]));
               return [itemId];
             },
@@ -538,6 +617,7 @@ export function createItem(
     });
     rh.addEventListener('dblclick', (e) => {
       e.stopPropagation();
+      const groupSnap = captureGroupSnap(ctx, record);
       const prevW = contentEl.offsetWidth, prevH = contentEl.offsetHeight;
       contentEl.style.width  = '';
       contentEl.style.height = '';
@@ -545,26 +625,33 @@ export function createItem(
       record.w = record.el.offsetWidth;
       record.h = record.el.offsetHeight;
       void saveItem(ctx, record);
+      const expandedGroup = expandGroupToFit(ctx, record);
+      if (expandedGroup) void saveItem(ctx, expandedGroup);
       updateEdgesForItems(ctx, new Set([record]));
       if (prevW !== endW || prevH !== endH) {
         const itemId = record.id;
+        const groupEnd = groupSnap ? captureGroupSize(ctx, groupSnap.id) : null;
         pushUndo(ctx, {
           label: 'resize',
           undo() {
-            const r = ctx.items.find(i => i.id === itemId);
+            const r = ctx.itemsById.get(itemId);
             if (!r) return [];
             r.contentEl.style.width  = prevW + 'px';
             r.contentEl.style.height = prevH + 'px';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
             void saveItem(ctx, r);
+            if (groupSnap) applyGroupSize(ctx, groupSnap.id, groupSnap.w, groupSnap.h);
             updateEdgesForItems(ctx, new Set([r]));
             return [itemId];
           },
           redo() {
-            const r = ctx.items.find(i => i.id === itemId);
+            const r = ctx.itemsById.get(itemId);
             if (!r) return [];
             r.contentEl.style.width  = '';
             r.contentEl.style.height = '';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
             void saveItem(ctx, r);
+            if (groupSnap && groupEnd) applyGroupSize(ctx, groupSnap.id, groupEnd.w, groupEnd.h);
             updateEdgesForItems(ctx, new Set([r]));
             return [itemId];
           },
@@ -1025,10 +1112,21 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     const cy = (e.clientY - vr.top  - ctx.panY) / ctx.scale;
     const dx = cx - startCanvasX, dy = cy - startCanvasY;
     for (const [item, start] of startPositions) {
-      item.el.style.left = (start.x + dx) + 'px';
-      item.el.style.top  = (start.y + dy) + 'px';
-      item.x = start.x + dx;
-      item.y = start.y + dy;
+      let nx = start.x + dx;
+      let ny = start.y + dy;
+      if (item.groupId != null) {
+        const group = ctx.itemsById.get(item.groupId);
+        if (group && !movingItems.has(group)) {
+          const iw = item.w || item.el.offsetWidth || 200;
+          const ih = item.h || item.el.offsetHeight || 200;
+          nx = Math.max(group.x, Math.min(group.x + group.w - iw, nx));
+          ny = Math.max(group.y, Math.min(group.y + group.h - ih, ny));
+        }
+      }
+      item.el.style.left = nx + 'px';
+      item.el.style.top  = ny + 'px';
+      item.x = nx;
+      item.y = ny;
     }
     updateEdgesForItems(ctx, movingItems);
   });
