@@ -8,7 +8,7 @@ export function getGroupMembers(ctx: Ctx, groupId: number): ItemRecord[] {
 }
 
 export function groupSelectedItems(ctx: Ctx): void {
-  const candidates = [...ctx.selectedItems].filter(i => i.type !== 'group');
+  const candidates = [...ctx.selectedItems].filter(i => !ctx.itemPlugins.get(i.type)?.container);
   if (candidates.length === 0) {
     toast(ctx, 'Select items to group');
     return;
@@ -38,9 +38,9 @@ export function groupSelectedItems(ctx: Ctx): void {
 
   for (const item of candidates) {
     item.groupId = groupRec.id;
-    void saveItem(ctx, item);
+    void saveItem(ctx, item.id);
   }
-  void saveItem(ctx, groupRec);
+  void saveItem(ctx, groupRec.id);
   selectItem(ctx, groupRec);
 
   const groupId   = groupRec.id;
@@ -51,7 +51,7 @@ export function groupSelectedItems(ctx: Ctx): void {
     undo() {
       for (const mid of memberIds) {
         const m = ctx.itemsById.get(mid);
-        if (m) { m.groupId = undefined; void saveItem(ctx, m); }
+        if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
       }
       const g = ctx.itemsById.get(groupId);
       if (g) removeItem(ctx, g);
@@ -64,9 +64,9 @@ export function groupSelectedItems(ctx: Ctx): void {
       g.w = gw; g.h = gh;
       for (const mid of memberIds) {
         const m = ctx.itemsById.get(mid);
-        if (m) { m.groupId = groupId; void saveItem(ctx, m); }
+        if (m) { m.groupId = groupId; void saveItem(ctx, m.id); }
       }
-      void saveItem(ctx, g);
+      void saveItem(ctx, g.id);
       return [groupId, ...memberIds];
     },
   });

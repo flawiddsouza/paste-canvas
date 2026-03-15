@@ -1,8 +1,13 @@
 import type { Ctx, StorageAdapter } from './types.js';
+import type { ItemPlugin, StoredPlugin } from './plugin.js';
+import { PastePriority } from './plugin.js';
 import { injectStyles } from './style.js';
 import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
-import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, placeImage, copyImage, copyText, duplicateSelected, PC_MIME_META, PC_MIME_IMAGE } from './items.js';
+import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, duplicateSelected } from './items.js';
+import { NotePlugin } from './plugins/NotePlugin.js';
+import { ImagePlugin } from './plugins/ImagePlugin.js';
+import { GroupPlugin } from './plugins/GroupPlugin.js';
 import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
@@ -10,7 +15,12 @@ import { initContextMenu } from './context-menu.js';
 
 export interface PasteCanvasOptions {
   title?: string;
+  itemTypes?: ItemPlugin[];
+  /** Item type to create when dragging an edge to empty canvas. Defaults to 'note'. */
+  edgeDropType?: string;
 }
+
+export const defaultPlugins: ItemPlugin[] = [ImagePlugin, NotePlugin, GroupPlugin];
 
 export function createCanvas(container: HTMLElement, adapter: StorageAdapter, opts?: PasteCanvasOptions): PasteCanvas {
   return new PasteCanvas(container, adapter, opts);
@@ -102,6 +112,8 @@ export class PasteCanvas {
 
     const q = <T extends Element>(sel: string) => container.querySelector<T>(sel)!;
 
+    const plugins = opts?.itemTypes ?? defaultPlugins;
+
     // ── Build context ──────────────────────────────────────────────────────
     this.ctx = {
       surface:        q<HTMLDivElement>('.pc-surface'),
@@ -127,7 +139,10 @@ export class PasteCanvas {
       arrowheadId,
       signal: this.abort.signal,
 
+      itemPlugins: new Map(plugins.map(p => [p.type, p])),
+
       adapter,
+      edgeDropType: opts?.edgeDropType ?? 'note',
     };
 
     this.setupInteraction(container);
@@ -179,11 +194,17 @@ export class PasteCanvas {
     q('.pc-btn-paste').addEventListener('click', async () => {
       try {
         const items_cb = await navigator.clipboard.read();
-        const { w: displayW, label, rawImageUrl } = await this.readPCMeta(items_cb);
-        if (rawImageUrl) { placeImage(ctx, rawImageUrl, displayW, label); return; }
-        for (const ci of items_cb) {
-          const type = ci.types.find(t => t.startsWith('image/'));
-          if (type) { placeImage(ctx, URL.createObjectURL(await ci.getType(type)), displayW, label); return; }
+        const sorted = [...ctx.itemPlugins.values()]
+          .filter(p => p.pasteFromClipboard)
+          .sort((a, b) => (b.pastePriority ?? PastePriority.normal) - (a.pastePriority ?? PastePriority.normal));
+        for (const p of sorted) {
+          let result: Awaited<ReturnType<NonNullable<typeof p.pasteFromClipboard>>>;
+          try { result = await p.pasteFromClipboard!(items_cb); }
+          catch (e) { console.error(`[paste-canvas] pasteFromClipboard() failed for plugin "${p.type}"`, e); continue; }
+          if (result) {
+            this.createItemAtViewportCenter(p.type, result.stored, result.width, result.height);
+            return;
+          }
         }
         toast(ctx, 'No image in clipboard. Try Ctrl+V instead.');
       } catch {
@@ -223,25 +244,6 @@ export class PasteCanvas {
       .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`), { signal });
   }
 
-  private async readPCMeta(items: ClipboardItem[]): Promise<{ w?: number; h?: number; label?: string; rawImageUrl?: string }> {
-    const out: { w?: number; h?: number; label?: string; rawImageUrl?: string } = {};
-    for (const ci of items) {
-      if (ci.types.includes(PC_MIME_META)) {
-        const meta = JSON.parse(await (await ci.getType(PC_MIME_META)).text());
-        if (meta?.pc === 1) {
-          if (meta.w > 0) out.w = meta.w;
-          if (meta.h > 0) out.h = meta.h;
-          if (meta.label) out.label = meta.label;
-        }
-      }
-      if (out.label && ci.types.includes(PC_MIME_IMAGE)) {
-        const rawBlob = await ci.getType(PC_MIME_IMAGE);
-        out.rawImageUrl = URL.createObjectURL(new Blob([rawBlob], { type: 'image/png' }));
-      }
-    }
-    return out;
-  }
-
   private setupPaste(): void {
     const ctx = this.ctx;
     let middleJustReleased = false;
@@ -250,49 +252,50 @@ export class PasteCanvas {
     document.addEventListener('paste', (e) => {
       if (middleJustReleased) { middleJustReleased = false; return; } // suppress middle-click primary-selection paste (Linux X11)
       if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
-      const dt = e.clipboardData!.items;
+      const dt = e.clipboardData!;
 
-      // Collect synchronously before any awaits
-      let imageUrl: string | null = null;
-      let textItem: DataTransferItem | null = null;
-      for (const item of dt) {
-        if (!imageUrl && item.kind === 'file' && item.type.startsWith('image/'))
-          imageUrl = URL.createObjectURL(item.getAsFile()!);
-        if (!textItem && item.kind === 'string' && item.type === 'text/plain')
-          textItem = item;
-      }
+      // Each plugin's paste() grabs its DataTransfer data synchronously before its first
+      // await — kick them all off now so all synchronous grabs happen before we yield.
+      const sorted = [...ctx.itemPlugins.values()]
+        .filter(p => p.paste)
+        .sort((a, b) => (b.pastePriority ?? PastePriority.normal) - (a.pastePriority ?? PastePriority.normal));
+      const passesSorted = sorted.flatMap(p => {
+        try { return [{ plugin: p, promise: p.paste!(dt) }]; }
+        catch (e) { console.error(`[paste-canvas] paste() threw synchronously for plugin "${p.type}"`, e); return []; }
+      });
 
-      if (imageUrl) {
-        void (async () => {
-          let meta: { w?: number; h?: number; label?: string; rawImageUrl?: string } = {};
-          try { meta = await this.readPCMeta(await navigator.clipboard.read()); } catch { /* not supported or permission denied */ }
-          if (meta.rawImageUrl) URL.revokeObjectURL(imageUrl!);
-          placeImage(ctx, meta.rawImageUrl ?? imageUrl!, meta.w, meta.label);
-        })();
-        return;
-      }
-
-      if (textItem) {
-        textItem.getAsString(async (text) => {
-          if (!text.trim()) return;
-          let meta: { w?: number; h?: number } = {};
-          try { meta = await this.readPCMeta(await navigator.clipboard.read()); } catch { /* not supported */ }
-          const c = viewportCenter(ctx);
-          const off = ctx.placeOffset++ * 24;
-          const rec = createItem(ctx, 'note', c.x - 90 + off, c.y - 40 + off);
-          (rec.contentEl as HTMLTextAreaElement).value = text;
-          if (meta.w) (rec.contentEl as HTMLTextAreaElement).style.width  = meta.w + 'px';
-          if (meta.h) (rec.contentEl as HTMLTextAreaElement).style.height = meta.h + 'px';
-          void saveItem(ctx, rec);
-          const snap = snapItem(ctx, rec);
-          pushUndo(ctx, {
-            label: 'create note',
-            undo() { const r = ctx.items.find(i => i.id === snap.id); if (r) removeItem(ctx, r); return []; },
-            redo() { restoreItemSnap(ctx, snap); return [snap.id]; },
-          });
-        });
-      }
+      void (async () => {
+        for (const { plugin, promise } of passesSorted) {
+          let result: Awaited<ReturnType<NonNullable<typeof plugin.paste>>>;
+          try { result = await promise; }
+          catch (e) { console.error(`[paste-canvas] paste() failed for plugin "${plugin.type}"`, e); continue; }
+          if (result) {
+            this.createItemAtViewportCenter(plugin.type, result.stored, result.width, result.height);
+            return;
+          }
+        }
+      })();
     }, { signal: ctx.signal });
+  }
+
+  private createItemAtViewportCenter(type: string, stored: StoredPlugin, width?: number, height?: number): void {
+    const ctx = this.ctx;
+    const c = viewportCenter(ctx);
+    const w = width  ?? 180;
+    const h = height ?? 80;
+    const off = ctx.placeOffset++ * 24;
+    const rec = createItem(ctx, type, c.x - w / 2 + off, c.y - h / 2 + off);
+    rec.bound.suppressDuring(() => {
+      try { rec.bound.hydrate(stored); }
+      catch (e) { console.error(`[paste-canvas] hydrate() failed for type "${type}"`, e); }
+    });
+    void saveItem(ctx, rec.id);
+    const snap = snapItem(ctx, rec);
+    pushUndo(ctx, {
+      label: `create ${ctx.itemPlugins.get(type)?.label.toLowerCase() ?? type}`,
+      undo() { const r = ctx.items.find(i => i.id === snap.id); if (r) removeItem(ctx, r); return []; },
+      redo() { restoreItemSnap(ctx, snap); return [snap.id]; },
+    });
   }
 
   private setupKeyboard(container: HTMLElement): void {
@@ -324,14 +327,7 @@ export class PasteCanvas {
       }
       if (e.ctrlKey && e.key === 'c' && ctx.selectedItems.size === 1) {
         const item = [...ctx.selectedItems][0];
-        if (item.type === 'img') {
-          const inner = item.contentEl.parentElement as HTMLElement;
-          void copyImage(ctx, item.contentEl as HTMLImageElement, inner.offsetWidth, inner.offsetHeight, item.labelEl?.value || undefined);
-        }
-        if (item.type === 'note') {
-          const ta = item.contentEl as HTMLTextAreaElement;
-          void copyText(ctx, ta, ta.offsetWidth, ta.offsetHeight);
-        }
+        item.bound.copy?.();
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && ctx.selectedItems.size > 0) {
         e.preventDefault();
@@ -347,7 +343,7 @@ export class PasteCanvas {
         updateEdgesForItems(ctx, ctx.selectedItems);
         invalidateOverviewCache(ctx);
         const after = new Map([ ...ctx.selectedItems ].map(r => [r.id, { x: r.x, y: r.y }]));
-        for (const r of ctx.selectedItems) void saveItem(ctx, r);
+        for (const r of ctx.selectedItems) void saveItem(ctx, r.id);
         pushUndo(ctx, {
           label: 'nudge',
           undo() {
@@ -355,7 +351,7 @@ export class PasteCanvas {
               const r = ctx.items.find(i => i.id === id); if (!r) continue;
               r.x = pos.x; r.y = pos.y;
               r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
-              void saveItem(ctx, r);
+              void saveItem(ctx, r.id);
             }
             updateEdgesForItems(ctx, new Set(ctx.items.filter(i => before.has(i.id))));
             return [...before.keys()];
@@ -365,7 +361,7 @@ export class PasteCanvas {
               const r = ctx.items.find(i => i.id === id); if (!r) continue;
               r.x = pos.x; r.y = pos.y;
               r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
-              void saveItem(ctx, r);
+              void saveItem(ctx, r.id);
             }
             updateEdgesForItems(ctx, new Set(ctx.items.filter(i => after.has(i.id))));
             return [...after.keys()];
@@ -390,7 +386,7 @@ export class PasteCanvas {
     // restore their groupId on undo (removeItem clears it).
     const orphanedMembers = new Map<number, number[]>(); // groupId -> memberIds
     for (const item of ctx.selectedItems) {
-      if (item.type === 'group') {
+      if (ctx.itemPlugins.get(item.type)?.container) {
         const ids = ctx.items
           .filter(i => i.groupId === item.id && !ctx.selectedItems.has(i))
           .map(i => i.id);
@@ -398,24 +394,23 @@ export class PasteCanvas {
       }
     }
 
-    for (const item of [...ctx.selectedItems]) removeItem(ctx, item, { skipRevoke: true });
+    for (const item of [...ctx.selectedItems]) removeItem(ctx, item);
     pushUndo(ctx, {
       label: snaps.length === 1
-        ? 'delete ' + (snaps[0].type === 'img' ? 'image' : snaps[0].type === 'group' ? 'group' : 'note')
+        ? `delete ${ctx.itemPlugins.get(snaps[0].type)?.label.toLowerCase() ?? snaps[0].type}`
         : `delete ${snaps.length} items`,
       undo() {
         for (const s of snaps) restoreItemSnap(ctx, s);
         for (const [groupId, memberIds] of orphanedMembers) {
           for (const mid of memberIds) {
             const m = ctx.itemsById.get(mid);
-            if (m) { m.groupId = groupId; void saveItem(ctx, m); }
+            if (m) { m.groupId = groupId; void saveItem(ctx, m.id); }
           }
         }
         for (const es of edgeSnaps) restoreEdgeSnap(ctx, es);
         return snaps.map(s => s.id);
       },
-      redo() { for (const s of snaps) { const r = ctx.items.find(i => i.id === s.id); if (r) removeItem(ctx, r, { skipRevoke: true }); } return []; },
-      dispose() { for (const s of snaps) { if (s.blobUrl && !ctx.items.find(i => i.id === s.id)) URL.revokeObjectURL(s.blobUrl!); } },
+      redo() { for (const s of snaps) { const r = ctx.items.find(i => i.id === s.id); if (r) removeItem(ctx, r); } return []; },
     });
   }
 

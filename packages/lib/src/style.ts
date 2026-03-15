@@ -160,6 +160,10 @@ export const css = `
     border: 1px solid #554;
     min-width: 250px;
     min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
   }
 
   .paste-canvas-root .note-handle {
@@ -181,9 +185,10 @@ export const css = `
 
   .paste-canvas-root .item-note textarea {
     display: block;
+    flex: 1;
     width: 100%;
     min-width: 250px;
-    min-height: 100px;
+    min-height: 0;
     resize: none;
     background: transparent;
     border: none;

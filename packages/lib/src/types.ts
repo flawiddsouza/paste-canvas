@@ -1,26 +1,22 @@
 // ── Serialisable data types (persisted via StorageAdapter) ─────────────────
 
+import type { BoundView, ItemPlugin } from './plugin.js';
+
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 
 export interface ItemData {
   id: number;
-  type: 'note' | 'img' | 'group';
+  type: string;                               // was: 'note' | 'img' | 'group'
   tabId: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  x: number; y: number; w: number; h: number;
   zIndex: number;
   groupId?: number;
-  color?: string;
-  // note fields
-  text?: string;
-  width?: number;
-  height?: number;
-  // img fields
-  imageData?: ArrayBuffer;
-  imageType?: string;
-  label?: string;
+  pluginData?: unknown;
+  binaryData?: Record<string, ArrayBuffer>;
+  binaryKeys?: string[];
+  // Legacy fields — kept for migration shim; fall away naturally after write-through
+  text?: string; color?: string; width?: number; height?: number;
+  imageData?: ArrayBuffer; imageType?: string; label?: string;
 }
 
 export interface TabData {
@@ -50,17 +46,11 @@ export interface ViewportState {
 export interface ItemRecord {
   id: number;
   el: HTMLDivElement;
-  type: 'note' | 'img' | 'group';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  contentEl: HTMLElement; // HTMLTextAreaElement for notes/groups, HTMLImageElement for imgs
-  labelEl?: HTMLTextAreaElement;
-  _autoGrowLabel?: () => void;
+  type: string;          // was: 'note' | 'img' | 'group'
+  x: number; y: number; w: number; h: number;
+  bound: BoundView;      // replaces contentEl, labelEl, _autoGrowLabel, color
   mounted: boolean;
   groupId?: number;
-  color?: string;
 }
 
 export interface EdgeRecord {
@@ -81,23 +71,11 @@ export interface EdgeRecord {
 // ── Snapshots (used by undo/redo commands) ──────────────────────────────────
 
 export interface SnapItem {
-  id: number;
-  type: 'note' | 'img' | 'group';
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-  zIndex: number;
-  groupId?: number;
-  color?: string;
-  // note / group label
-  text?: string;
-  contentWidth?: number;
-  contentHeight?: number;
-  // img
-  blobUrl?: string;
-  imageWidth?: number;
-  label?: string;
+  id: number; type: string;
+  x: number; y: number; w?: number; h?: number;
+  zIndex: number; groupId?: number;
+  pluginSnap:    unknown;
+  snapResources: string[];
 }
 
 export interface SnapEdge {
@@ -112,7 +90,7 @@ export interface SnapEdge {
 
 export interface UndoCmd {
   label?: string;
-  _blobUrl?: string;
+  protectedResources?: string[];   // was: _blobUrl?: string
   undo(): number[];
   redo(): number[];
   dispose?(): void;
@@ -198,4 +176,8 @@ export interface Ctx {
 
   // Adapter
   adapter: StorageAdapter;
+  itemPlugins: Map<string, ItemPlugin>;
+
+  // Config
+  edgeDropType: string;
 }

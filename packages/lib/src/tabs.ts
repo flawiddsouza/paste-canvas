@@ -1,27 +1,48 @@
-import type { Ctx, EdgeRecord } from './types.js';
+import type { Ctx, EdgeRecord, ItemData } from './types.js';
+import type { StoredPlugin } from './plugin.js';
 import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache, toast, showConfirm } from './canvas.js';
-import { renderEdge, updateEdgesForItems } from './edges.js';
-import { createItem, saveItem, applyNoteColor } from './items.js';
+import { renderEdge } from './edges.js';
+import { createItem } from './items.js';
 import { saveTabHistory, restoreTabHistory } from './history.js';
 
 // ── Unload current tab's items/edges ─────────────────────────────────────────
 
-export function unloadItems(ctx: Ctx, protectedBlobs: Set<string> = new Set()): void {
+export function unloadItems(ctx: Ctx): void {
   for (const e of ctx.edges) { e.svgEl?.remove(); e.inputEl?.remove(); }
   ctx.edges = [];
   ctx.selectedEdges.clear();
   ctx.nodeEdgeMap.clear();
   for (const rec of ctx.items) {
-    rec.mounted = false;
-    const src = (rec.contentEl as HTMLImageElement).src;
-    if (rec.type === 'img' && src?.startsWith('blob:') && !protectedBlobs.has(src))
-      URL.revokeObjectURL(src);
+    rec.bound.destroy();
     rec.el.remove();
+    rec.mounted = false;
   }
   ctx.items = [];
   ctx.itemsById.clear();
   ctx.selectedItems.clear();
   invalidateOverviewCache(ctx);
+}
+
+// ── Build StoredPlugin from ItemData (new or legacy format) ──────────────────
+
+function storedFromItemData(saved: ItemData): StoredPlugin {
+  if (saved.pluginData !== undefined) {
+    return { data: saved.pluginData, binary: saved.binaryData };
+  }
+  // Legacy migration from old per-field format
+  switch (saved.type) {
+    case 'note':
+      return { data: { text: saved.text, color: saved.color, width: saved.width, height: saved.height } };
+    case 'img':
+      return {
+        data:   { label: saved.label, displayW: saved.width },
+        binary: saved.imageData ? { image: saved.imageData } : undefined,
+      };
+    case 'group':
+      return { data: { text: saved.text } };
+    default:
+      return {};
+  }
 }
 
 // ── Load a tab ────────────────────────────────────────────────────────────────
@@ -45,38 +66,18 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
     .sort((a, b) => a.zIndex - b.zIndex);
 
   for (const saved of tabItems) {
-    let rec: ReturnType<typeof createItem>;
-    if (saved.type === 'group') {
-      rec = createItem(ctx, 'group', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
-      if (saved.w) { rec.el.style.width  = saved.w + 'px'; rec.w = saved.w; }
-      if (saved.h) { rec.el.style.height = saved.h + 'px'; rec.h = saved.h; }
-      if (saved.text) (rec.contentEl as HTMLTextAreaElement).value = saved.text;
-    } else if (saved.type === 'img') {
-      const blob = new Blob([saved.imageData!], { type: saved.imageType || 'image/png' });
-      rec = createItem(ctx, 'img', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
-      rec.contentEl.parentElement!.style.width = (saved.width || 300) + 'px';
-      const imgEl = rec.contentEl as HTMLImageElement;
-      imgEl.onload = () => {
-        if (rec.mounted) {
-          rec.w = rec.el.offsetWidth;
-          rec.h = rec.el.offsetHeight;
-        }
-        updateEdgesForItems(ctx, new Set([rec]));
-      };
-      imgEl.src = URL.createObjectURL(blob);
-      if (saved.label && rec.labelEl) {
-        rec.labelEl.value = saved.label;
-        rec.el.querySelector<HTMLButtonElement>('.pc-btn-copy-label')?.style.setProperty('display', '');
-      }
-    } else {
-      rec = createItem(ctx, 'note', saved.x, saved.y, { id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true });
-      (rec.contentEl as HTMLTextAreaElement).value = saved.text || '';
-      if (saved.width)  rec.contentEl.style.width  = saved.width  + 'px';
-      if (saved.height) rec.contentEl.style.height = saved.height + 'px';
-      if (saved.color) { rec.color = saved.color; applyNoteColor(rec, saved.color); }
-    }
-    if (saved.w != null) rec.w = saved.w;
-    if (saved.h != null) rec.h = saved.h;
+    const rec = createItem(ctx, saved.type, saved.x, saved.y, {
+      id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true,
+    });
+    rec.bound.suppressDuring(() => {
+      try { rec.bound.hydrate(storedFromItemData(saved)); }
+      catch (e) { console.error(`[paste-canvas] hydrate() failed for type "${saved.type}"`, e); }
+    });
+    if (saved.w != null) { rec.el.style.width  = saved.w + 'px'; rec.w = saved.w; }
+    // Don't constrain height for width-only resize items (e.g. images) — their height
+    // is content-driven and the saved value was captured before the image decoded.
+    const heightFixed = ctx.itemPlugins.get(saved.type)?.resize !== 'width';
+    if (saved.h != null && heightFixed) { rec.el.style.height = saved.h + 'px'; rec.h = saved.h; }
   }
 
   // Second pass: restore groupId on member items
@@ -164,14 +165,14 @@ export function renderTabBar(ctx: Ctx): void {
       const items = tab.id === ctx.currentTabId
         ? ctx.items
         : (await ctx.adapter.getAllItems()).filter(i => i.tabId === tab.id);
-      const notes  = items.filter(i => i.type === 'note').length;
-      const images = items.filter(i => i.type === 'img').length;
-      const groups = items.filter(i => i.type === 'group').length;
-      const parts  = [
-        notes  ? `${notes} ${notes  === 1 ? 'note'  : 'notes'}`  : '',
-        images ? `${images} ${images === 1 ? 'image' : 'images'}` : '',
-        groups ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : '',
-      ].filter(Boolean);
+      const labelCounts = new Map<string, number>();
+      for (const i of items) {
+        const label = ctx.itemPlugins.get(i.type)?.label ?? i.type;
+        labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+      }
+      const parts = [...labelCounts.entries()].map(([label, count]) =>
+        `${count} ${count === 1 ? label.toLowerCase() : label.toLowerCase() + 's'}`
+      );
       const safeName = tab.name.replace(/&/g, '&amp;').replace(/</g, '&lt;');
       const msg = parts.length
         ? `Delete <strong>${safeName}</strong>? It contains ${parts.join(' and ')} that will be permanently deleted.`
@@ -195,11 +196,7 @@ export async function switchTab(ctx: Ctx, tabId: number): Promise<void> {
     panX: ctx.panX, panY: ctx.panY, scale: ctx.scale,
   });
   saveTabHistory(ctx, ctx.currentTabId!);
-  const protectedBlobs = new Set<string>();
-  for (const cmd of [...ctx.undoStack, ...ctx.redoStack]) {
-    if (cmd._blobUrl) protectedBlobs.add(cmd._blobUrl);
-  }
-  unloadItems(ctx, protectedBlobs);
+  unloadItems(ctx);
   ctx.currentTabId = tabId;
   ctx.adapter.saveActiveTab(tabId);
   renderTabBar(ctx);

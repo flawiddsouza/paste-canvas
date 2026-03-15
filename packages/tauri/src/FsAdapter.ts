@@ -13,7 +13,7 @@ interface WorkspaceFile {
   activeTabId: number | null;
 }
 
-type ItemRecord = Omit<ItemData, 'imageData'>;
+type ItemRecord = Omit<ItemData, 'imageData' | 'binaryData'>;
 
 interface BoardFile {
   items: ItemRecord[];
@@ -45,6 +45,12 @@ export class FsAdapter implements StorageAdapter {
   private vpPath()               { return `${this.folder}/viewport.json`; }
   private boardPath(tabId: number) { return `${this.folder}/board-${tabId}.json`; }
   private imgPath(itemId: number)  { return `${this.folder}/images/${itemId}.bin`; }
+  // New format: one file per binary key; 'image' reuses the legacy path for backward compat
+  private binPath(itemId: number, key: string) {
+    return key === 'image'
+      ? this.imgPath(itemId)
+      : `${this.folder}/images/${itemId}-${key}.bin`;
+  }
 
   // ── Static factory ────────────────────────────────────────────────────
 
@@ -115,8 +121,15 @@ export class FsAdapter implements StorageAdapter {
   // ── StorageAdapter — Items ────────────────────────────────────────────
 
   async putItem(item: ItemData): Promise<void> {
-    const { imageData, ...rest } = item;
-    if (item.type === 'img' && imageData) {
+    const { imageData, binaryData, ...rest } = item;
+    if (binaryData) {
+      // New format: save each binary key to its own file
+      for (const [key, buf] of Object.entries(binaryData)) {
+        this.onWrite();
+        await writeFile(this.binPath(item.id, key), new Uint8Array(buf));
+      }
+    } else if (item.type === 'img' && imageData) {
+      // Legacy format: save imageData to the legacy path
       this.onWrite();
       await writeFile(this.imgPath(item.id), new Uint8Array(imageData));
     }
@@ -130,8 +143,12 @@ export class FsAdapter implements StorageAdapter {
     if (!item) return;
     this.items.delete(id);
     this.onWrite();
-    const ip = this.imgPath(id);
-    if (await exists(ip)) await remove(ip);
+    // Remove binary files — new format uses binaryKeys, legacy uses imgPath
+    const keys = item.binaryKeys ?? (item.type === 'img' ? ['image'] : []);
+    for (const key of keys) {
+      const p = this.binPath(id, key);
+      if (await exists(p)) await remove(p);
+    }
     await this.flushBoard(item.tabId);
     this.onDirty();
   }
@@ -139,12 +156,23 @@ export class FsAdapter implements StorageAdapter {
   async getAllItems(): Promise<ItemData[]> {
     const results: ItemData[] = [];
     for (const item of this.items.values()) {
-      if (item.type === 'img') {
+      if (item.binaryKeys?.length) {
+        // New format: load each binary key from disk
+        const binaryData: Record<string, ArrayBuffer> = {};
+        for (const key of item.binaryKeys) {
+          const p = this.binPath(item.id, key);
+          if (await exists(p)) {
+            const bytes = await readFile(p);
+            binaryData[key] = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+          }
+        }
+        results.push({ ...item, binaryData });
+      } else if (item.type === 'img') {
+        // Legacy format: load imageData from disk
         const ip = this.imgPath(item.id);
         if (await exists(ip)) {
           const bytes = await readFile(ip);
-          const imageData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-          results.push({ ...item, imageData });
+          results.push({ ...item, imageData: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer });
         } else {
           results.push({ ...item });
         }

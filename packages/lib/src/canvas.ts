@@ -10,6 +10,9 @@ export function applyTransform(ctx: Ctx): void {
   const py = Math.round(ctx.panY * dpr) / dpr;
   const t = `translate(${px}px, ${py}px) scale(${ctx.scale})`;
   ctx.surface.style.transform = t;
+  // Reset any browser-induced scroll (can happen when a textarea inside gets focused)
+  if (ctx.viewport.scrollLeft !== 0) ctx.viewport.scrollLeft = 0;
+  if (ctx.viewport.scrollTop  !== 0) ctx.viewport.scrollTop  = 0;
   ctx.zoomLabel.textContent = Math.round(ctx.scale * 100) + '%';
   const gs = 40 * ctx.scale;
   ctx.viewport.style.backgroundSize = `${gs}px ${gs}px`;
@@ -128,7 +131,10 @@ export function clearEdgeSelection(ctx: Ctx): void {
 }
 
 export function clearSelection(ctx: Ctx): void {
-  for (const item of ctx.selectedItems) item.el.classList.remove('selected');
+  for (const item of ctx.selectedItems) {
+    item.el.classList.remove('selected');
+    item.bound.onSelectionChange?.(false);
+  }
   ctx.selectedItems.clear();
   clearEdgeSelection(ctx);
   ctx.editingEdge?.inputEl?.blur();
@@ -137,7 +143,8 @@ export function clearSelection(ctx: Ctx): void {
 export function addToSelection(ctx: Ctx, item: ItemRecord): void {
   ctx.selectedItems.add(item);
   item.el.classList.add('selected');
-  if (item.type !== 'group') {
+  item.bound.onSelectionChange?.(true);
+  if (!ctx.itemPlugins.get(item.type)?.container) {
     item.el.style.zIndex = String(++ctx.zCounter);
     for (const edge of (ctx.nodeEdgeMap.get(item.id) ?? [])) {
       if (edge.toNode === item.id) edge.svgEl.style.zIndex = item.el.style.zIndex;
@@ -154,6 +161,7 @@ export function toggleSelection(ctx: Ctx, item: ItemRecord): void {
   if (ctx.selectedItems.has(item)) {
     ctx.selectedItems.delete(item);
     item.el.classList.remove('selected');
+    item.bound.onSelectionChange?.(false);
   } else {
     clearEdgeSelection(ctx);
     addToSelection(ctx, item);
@@ -276,6 +284,9 @@ export function initViewport(ctx: Ctx): void {
     ctx.panX = mx - (mx - ctx.panX) * (newScale / ctx.scale);
     ctx.panY = my - (my - ctx.panY) * (newScale / ctx.scale);
     ctx.scale = newScale;
+    // Keep pan anchor in sync so a concurrent drag doesn't fight the zoom
+    px0 = e.clientX - ctx.panX;
+    py0 = e.clientY - ctx.panY;
     applyTransform(ctx);
     saveViewport(ctx);
   }, { passive: false, signal });
@@ -335,15 +346,18 @@ function buildOverviewCache(ctx: Ctx): void {
   c2d.translate(-minX, -minY);
   for (const item of ctx.items) {
     const iw = item.w || 200, ih = item.h || 200;
-    if (item.type === 'group') {
+    const plugin = ctx.itemPlugins.get(item.type);
+    if (plugin?.container) {
       c2d.fillStyle = 'rgba(255, 200, 60, 0.07)';
       c2d.fillRect(item.x, item.y, iw, ih);
       c2d.strokeStyle = 'rgba(255, 255, 255, 0.12)';
       c2d.lineWidth = 2;
       c2d.strokeRect(item.x, item.y, iw, ih);
+    // TODO: add optional buildOverviewTile(ctx2d, rec) to ItemPlugin
+    //       so third-party plugins can render their own overview tile.
     } else if (item.type === 'img') {
-      const img = item.contentEl as HTMLImageElement;
-      if (img.complete && img.naturalWidth > 0) {
+      const img = item.el.querySelector('img');
+      if (img?.complete && img.naturalWidth > 0) {
         c2d.drawImage(img, item.x, item.y, iw, ih);
       } else {
         c2d.fillStyle = '#333';
@@ -407,8 +421,8 @@ export function updateCulling(ctx: Ctx): void {
     if (visible && !item.mounted) {
       ctx.surface.appendChild(item.el);
       item.mounted = true;
-      item._autoGrowLabel?.();
-      item._autoGrowLabel = undefined;
+      item.bound.afterMount?.(false);
+      if (item.w && item.h) item.bound.onResize?.(item.w, item.h);
     } else if (!visible && item.mounted) {
       item.el.remove();
       item.mounted = false;

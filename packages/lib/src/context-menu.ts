@@ -38,7 +38,7 @@ function restoreZMap(ctx: Ctx, map: Map<number, number>): number[] {
   for (const [id, z] of map) {
     const r = ctx.itemsById.get(id); if (!r) continue;
     r.el.style.zIndex = String(z);
-    void saveItem(ctx, r);
+    void saveItem(ctx, r.id);
   }
   return [...map.keys()];
 }
@@ -51,9 +51,9 @@ function applyZIndexChange(
 ): void {
   const before = new Map(items.map(i => [i.id, parseInt(i.el.style.zIndex) || 0]));
   for (const item of items) {
-    if (item.type === 'group') continue;
+    if (ctx.itemPlugins.get(item.type)?.container) continue;
     apply(item);
-    void saveItem(ctx, item);
+    void saveItem(ctx, item.id);
   }
   const after = new Map(items.map(i => [i.id, parseInt(i.el.style.zIndex) || 0]));
   pushUndo(ctx, {
@@ -79,7 +79,7 @@ function bringToFront(ctx: Ctx, items: ItemRecord[]): void {
 
 function sendToBack(ctx: Ctx, items: ItemRecord[]): void {
   const itemIds = new Set(items.map(i => i.id));
-  const others  = ctx.items.filter(i => !itemIds.has(i.id) && i.type !== 'group');
+  const others  = ctx.items.filter(i => !itemIds.has(i.id) && !ctx.itemPlugins.get(i.type)?.container);
   const minZ    = others.length > 0
     ? others.reduce((m, i) => Math.min(m, parseInt(i.el.style.zIndex) || 1), Infinity)
     : 1;
@@ -132,7 +132,7 @@ export function initContextMenu(
       const clicked = target.record;
       if (!ctx.selectedItems.has(clicked)) selectItem(ctx, clicked);
       const targets  = [...ctx.selectedItems];
-      const hasItems = targets.some(i => i.type !== 'group');
+      const hasItems = targets.some(i => !ctx.itemPlugins.get(i.type)?.container);
 
       if (hasItems) {
         addEntry('Bring to Front', false, () => bringToFront(ctx, targets));
@@ -141,7 +141,7 @@ export function initContextMenu(
       }
 
       const delLabel = targets.length === 1
-        ? `Delete ${targets[0].type === 'img' ? 'Image' : targets[0].type === 'group' ? 'Group' : 'Note'}`
+        ? `Delete ${ctx.itemPlugins.get(targets[0].type)?.label ?? targets[0].type}`
         : `Delete ${targets.length} Items`;
       addEntry(delLabel, true, deleteItems);
 

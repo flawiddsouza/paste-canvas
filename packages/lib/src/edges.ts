@@ -157,7 +157,7 @@ export function renderEdge(ctx: Ctx, edgeRec: EdgeRecord): void {
     labelText.style.display = 'none';
     input.classList.add('editing');
     ctx.editingEdge = edgeRec;
-    input.focus();
+    input.focus({ preventScroll: true });
     input.select();
   });
 
@@ -373,12 +373,16 @@ export function startEdgeDrag(ctx: Ctx, fromRecord: ItemRecord, fromSide: Side, 
     if (target) {
       createEdge(ctx, fromRecord, fromSide, target.record, target.side);
     } else {
-      // Spawn a new note at the drop position, offset so the opposing port aligns with cursor
+      // Spawn a new item at the drop position, offset so the opposing port aligns with cursor
       const vr = ctx.viewport.getBoundingClientRect();
       const cx = (ev.clientX - vr.left - ctx.panX) / ctx.scale;
       const cy = (ev.clientY - vr.top  - ctx.panY) / ctx.scale;
+      const defaultPlugin =
+        ctx.itemPlugins.get(ctx.edgeDropType) ??
+        [...ctx.itemPlugins.values()].find(p => !p.container);
+      if (!defaultPlugin) return;
       // Place initially at cursor; rAF will reposition using real rendered size
-      const newRec = createItem(ctx, 'note', cx, cy);
+      const newRec = createItem(ctx, defaultPlugin.type, cx, cy);
       const toSide = oppSide[fromSide];
       createEdge(ctx, fromRecord, fromSide, newRec, toSide, { skipUndo: true });
       // Reposition after layout so the opposing port lands on the cursor
@@ -397,12 +401,12 @@ export function startEdgeDrag(ctx: Ctx, fromRecord: ItemRecord, fromSide: Side, 
         newRec.el.style.left = newRec.x + 'px';
         newRec.el.style.top  = newRec.y + 'px';
         updateEdgesForItems(ctx, new Set([newRec]));
-        saveItem(ctx, newRec);
+        saveItem(ctx, newRec.id);
         const noteSnap = snapItem(ctx, newRec);
         const edgeRec = ctx.edges.find(e => e.fromNode === fromRecord.id && e.toNode === newRec.id);
         const edgeSnap = edgeRec ? snapEdge(edgeRec) : null;
         pushUndo(ctx, {
-          label: 'create note from edge',
+          label: `create ${defaultPlugin.label.toLowerCase()} from edge`,
           undo() {
             const r = ctx.itemsById.get(noteSnap.id);
             if (r) removeItem(ctx, r); // cascades to remove connected edges
