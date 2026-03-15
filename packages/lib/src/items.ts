@@ -130,7 +130,7 @@ export function createItem(
   const plugin = ctx.itemPlugins.get(type);
   let bound: BoundView;
   if (plugin) {
-    const { api, abort, suppress } = makePluginAPI(ctx, id);
+    const { api, abort, suppress } = makePluginAPI(ctx, id, el);
     let view: { el: HTMLElement };
     try { view = plugin.create(api); }
     catch (err) {

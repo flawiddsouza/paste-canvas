@@ -25,7 +25,8 @@ export interface StoredPlugin {
 // ── PluginAPI ───────────────────────────────────────────────────────────────
 
 export interface PluginAPI {
-  readonly itemId: number;
+  readonly itemId:  number;
+  readonly itemEl:  HTMLElement;         // outer .item element wrapping the plugin's el
   readonly signal:  AbortSignal;         // aborted on item destroy / canvas teardown
   readonly scale:   number;              // current zoom level (getter — always reads live value)
 
@@ -227,14 +228,16 @@ export function bindPlugin<V extends { el: HTMLElement }, S>(
 // ── makePluginAPI() — factory returns api + internals ───────────────────────
 
 export function makePluginAPI(
-  ctx: Ctx,
-  id:  number,
+  ctx:    Ctx,
+  id:     number,
+  itemEl: HTMLElement,
 ): { api: PluginAPI; abort: AbortController; suppress: (v: boolean) => void } {
   const abort = new AbortController();
   let suppressed = false;
 
   const api: PluginAPI = {
-    itemId: id,
+    itemId:  id,
+    itemEl,
     signal: abort.signal,
     get scale() { return ctx.scale; },
 

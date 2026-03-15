@@ -23,6 +23,7 @@ const HEX_TO_KEY: Record<string, string> = Object.fromEntries(
 
 interface NoteView {
   el:       HTMLElement;
+  itemEl:   HTMLElement;   // outer .item element — owned by core, used for color CSS vars
   textarea: HTMLTextAreaElement;
   color:    string | undefined;
 }
@@ -38,14 +39,12 @@ interface NoteSnap {
 
 function applyColor(view: NoteView, color: string | undefined): void {
   view.color = color;
-  // Color CSS vars/class go on the outer .item element (matched by .item-note.colored rules)
-  const target = (view.el.closest('.item') as HTMLElement | null) ?? view.el;
   if (!color) {
-    target.classList.remove('colored');
-    target.style.removeProperty('--note-color');
+    view.itemEl.classList.remove('colored');
+    view.itemEl.style.removeProperty('--note-color');
   } else {
-    target.classList.add('colored');
-    target.style.setProperty('--note-color', color);
+    view.itemEl.classList.add('colored');
+    view.itemEl.style.setProperty('--note-color', color);
   }
 }
 
@@ -97,7 +96,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
     textarea.spellcheck  = false;
     el.append(handle, textarea);
 
-    const view: NoteView = { el, textarea, color: undefined };
+    const view: NoteView = { el, itemEl: api.itemEl, textarea, color: undefined };
 
     // Debounced save on input
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,7 +116,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
       const prevColor = view.color;
       applyColor(view, newColor);
       // Sync swatch active state
-      view.el.closest('.item')?.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
+      view.itemEl.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
         sw.classList.toggle('active', sw.dataset.color === activeSwatchKey(view.color))
       );
       api.save();
@@ -125,7 +124,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
         label: 'color',
         undo() {
           applyColor(view, prevColor);
-          view.el.closest('.item')?.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
+          view.itemEl.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
             sw.classList.toggle('active', sw.dataset.color === activeSwatchKey(view.color))
           );
           api.save();
@@ -133,7 +132,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
         },
         redo() {
           applyColor(view, newColor);
-          view.el.closest('.item')?.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
+          view.itemEl.querySelectorAll<HTMLButtonElement>('.item-color-swatch').forEach(sw =>
             sw.classList.toggle('active', sw.dataset.color === activeSwatchKey(view.color))
           );
           api.save();
@@ -261,7 +260,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
   afterMount(v, isNew) {
     applyColor(v, v.color);
     const k = activeSwatchKey(v.color);
-    v.el.closest('.item')?.querySelectorAll<HTMLButtonElement>('.item-color-swatch')
+    v.itemEl.querySelectorAll<HTMLButtonElement>('.item-color-swatch')
       .forEach(sw => sw.classList.toggle('active', sw.dataset.color === k));
     if (isNew && !v.textarea.value) v.textarea.focus({ preventScroll: true });
   },
