@@ -74,8 +74,7 @@ export interface SnapItem {
   id: number; type: string;
   x: number; y: number; w?: number; h?: number;
   zIndex: number; groupId?: number;
-  pluginSnap:    unknown;
-  snapResources: string[];
+  pluginSnap: unknown;
 }
 
 export interface SnapEdge {
@@ -90,7 +89,6 @@ export interface SnapEdge {
 
 export interface UndoCmd {
   label?: string;
-  protectedResources?: string[];   // was: _blobUrl?: string
   undo(): number[];
   redo(): number[];
   dispose?(): void;

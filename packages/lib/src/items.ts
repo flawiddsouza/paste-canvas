@@ -11,18 +11,14 @@ const GROUP_PAD = 24;
 
 export function snapItem(ctx: Ctx, rec: ItemRecord): SnapItem {
   let pluginSnap: unknown = null;
-  let snapResources: string[] = [];
   try { pluginSnap = rec.bound.snapshot(); }
   catch (e) { console.error(`[paste-canvas] snapshot() failed for type "${rec.type}"`, e); }
-  try { snapResources = rec.bound.snapResources?.() ?? []; }
-  catch (e) { console.error(`[paste-canvas] snapResources() failed for type "${rec.type}"`, e); }
   return {
     id: rec.id, type: rec.type,
     x: rec.x, y: rec.y, w: rec.w, h: rec.h,
     zIndex: parseInt(rec.el.style.zIndex) || 0,
     groupId: rec.groupId,
     pluginSnap,
-    snapResources,
   };
 }
 
@@ -231,7 +227,6 @@ export function createItem(
     removeItem(ctx, rec);
     pushUndo(ctx, {
       label: `delete ${plugin?.label.toLowerCase() ?? type}`,
-      protectedResources: snap.snapResources,
       undo() {
         restoreItemSnap(ctx, snap);
         for (const mid of memberIds) {
@@ -245,11 +240,6 @@ export function createItem(
         const r = ctx.itemsById.get(snap.id);
         if (r) removeItem(ctx, r);
         return [];
-      },
-      dispose() {
-        if (!ctx.items.find(i => i.id === snap.id)) {
-          for (const url of snap.snapResources) URL.revokeObjectURL(url);
-        }
       },
     });
   });
@@ -646,35 +636,17 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
 
 // ── Duplicate selected ────────────────────────────────────────────────────────
 
-/** Duplicate an item's plugin state into a new record, trying bound.clone() first. */
-function cloneInto(ctx: Ctx, dst: ItemRecord, src: ItemRecord): void {
-  if (src.bound.clone) {
-    // Plugin implements clone() — use it for independent resource lifecycle
-    const { api, abort, suppress } = makePluginAPI(ctx, dst.id);
-    try {
-      const clonedBound = src.bound.clone(api, abort, suppress);
-      // Swap the bound and el on the destination record
-      dst.bound.destroy(); // clean up the placeholder bound from createItem
-      (dst as any).bound = clonedBound;
-      dst.el.querySelector('.item-inner')!.replaceChildren(clonedBound.el);
-    } catch (e) {
-      console.error(`[paste-canvas] clone() failed for type "${src.type}", falling back to snapshot→restore`, e);
-      // Fall through to snapshot→restore
-      dst.bound.suppressDuring(() => {
-        try { dst.bound.restore(src.bound.snapshot()); }
-        catch (e2) { console.error(`[paste-canvas] duplicate restore() failed for type "${src.type}"`, e2); }
-      });
-    }
-  } else {
-    // Fallback: snapshot → restore (safe when snapshots don't share revocable resources)
-    dst.bound.suppressDuring(() => {
-      try { dst.bound.restore(src.bound.snapshot()); }
-      catch (e) { console.error(`[paste-canvas] duplicate restore() failed for type "${src.type}"`, e); }
-    });
-  }
+async function cloneInto(ctx: Ctx, dst: ItemRecord, src: ItemRecord): Promise<void> {
+  let stored: StoredPlugin;
+  try { stored = await src.bound.serialize(); }
+  catch (e) { console.error(`[paste-canvas] serialize() failed for type "${src.type}" during duplicate`, e); return; }
+  dst.bound.suppressDuring(() => {
+    try { dst.bound.hydrate(stored); }
+    catch (e) { console.error(`[paste-canvas] hydrate() failed for type "${src.type}" during duplicate`, e); }
+  });
 }
 
-export function duplicateSelected(ctx: Ctx): void {
+export async function duplicateSelected(ctx: Ctx): Promise<void> {
   if (ctx.selectedItems.size === 0) return;
   const OFFSET = 24;
 
@@ -694,7 +666,7 @@ export function duplicateSelected(ctx: Ctx): void {
     const newRec = createItem(ctx, item.type, item.x + OFFSET, item.y + OFFSET, { skipSelect: true });
     if (item.w) { newRec.el.style.width  = item.w + 'px'; newRec.w = item.w; }
     if (item.h) { newRec.el.style.height = item.h + 'px'; newRec.h = item.h; }
-    cloneInto(ctx, newRec, item);
+    await cloneInto(ctx, newRec, item);
     void saveItem(ctx, newRec.id);
     addToSelection(ctx, newRec);
     allSnaps.push(snapItem(ctx, newRec));
@@ -710,14 +682,14 @@ export function duplicateSelected(ctx: Ctx): void {
     newGroup.el.style.width  = gw + 'px';
     newGroup.el.style.height = gh + 'px';
     newGroup.w = gw; newGroup.h = gh;
-    cloneInto(ctx, newGroup, group);
+    await cloneInto(ctx, newGroup, group);
     addToSelection(ctx, newGroup);
 
     for (const member of members) {
       const newMember = createItem(ctx, member.type, member.x + OFFSET, member.y + OFFSET, { skipSelect: true });
       if (member.w) { newMember.el.style.width  = member.w + 'px'; newMember.w = member.w; }
       if (member.h) { newMember.el.style.height = member.h + 'px'; newMember.h = member.h; }
-      cloneInto(ctx, newMember, member);
+      await cloneInto(ctx, newMember, member);
       newMember.groupId = newGroup.id;
       void saveItem(ctx, newMember.id);
       addToSelection(ctx, newMember);

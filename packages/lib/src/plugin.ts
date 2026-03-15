@@ -73,13 +73,6 @@ export interface ItemPlugin<
 
   // ── Optional ────────────────────────────────────────────────────────────────
 
-  /**
-   * Return blob URLs held by this view.
-   * Called at snapshot time; result is stored on SnapItem.snapResources and
-   * used to protect URLs during tab switch and to revoke them on dispose.
-   */
-  snapResources?(view: TView): string[];
-
   /** Revoke blob URLs, cancel timers, etc. Called on delete and tab unload. */
   dispose?(view: TView): void;
 
@@ -115,16 +108,6 @@ export interface ItemPlugin<
     width?:  number;
     height?: number;
   } | null>;
-
-  /**
-   * Duplicate this view into a new view with independent resources.
-   * Receives `api` so the clone can wire event listeners (same as create).
-   * Omit to use the automatic fallback: snapshot → create() → restore().
-   * Implement when snapshot/restore would share a revocable resource (e.g.
-   * a blob URL) — otherwise deleting one copy revokes the URL and breaks
-   * the other. See "Note on clone()".
-   */
-  clone?(view: TView, api: PluginAPI): TView;
 
   /**
    * Return extra toolbar buttons to insert before the core-owned buttons
@@ -197,11 +180,9 @@ export interface BoundView {
 
   // ── Optional — present only if the plugin implements them ─────────────────
   copy?():                        void;
-  clone?(newApi: PluginAPI, newAbort: AbortController, newSuppress: (v: boolean) => void): BoundView;
   toolbarButtons?():              HTMLElement[];
   afterMount?(isNew: boolean):    void;
   onResize?(w: number, h: number): void;
-  snapResources?():               string[];
   onSelectionChange?(selected: boolean): void;
 }
 
@@ -211,7 +192,7 @@ export interface BoundView {
  * Create a BoundView that closes over the typed view and api.
  * This is the ONE place in the framework where the type parameter
  * is erased. Safety invariant: view was produced by the same plugin's
- * create() or clone().
+ * create().
  */
 export function bindPlugin<V extends { el: HTMLElement }, S>(
   plugin:   ItemPlugin<V, S>,
@@ -239,15 +220,7 @@ export function bindPlugin<V extends { el: HTMLElement }, S>(
     toolbarButtons:   plugin.toolbarButtons   ? () => plugin.toolbarButtons!(view, api)   : undefined,
     afterMount:       plugin.afterMount       ? (isNew) => plugin.afterMount!(view, isNew) : undefined,
     onResize:         plugin.onResize         ? (w, h) => plugin.onResize!(view, w, h)   : undefined,
-    snapResources:    plugin.snapResources    ? () => plugin.snapResources!(view)         : undefined,
     onSelectionChange: plugin.onSelectionChange ? (s) => plugin.onSelectionChange!(view, s) : undefined,
-
-    clone: plugin.clone
-      ? (newApi, newAbort, newSuppress) => {
-          const cloned = plugin.clone!(view, newApi);
-          return bindPlugin(plugin, cloned, newApi, newAbort, newSuppress);
-        }
-      : undefined,
   };
 }
 
