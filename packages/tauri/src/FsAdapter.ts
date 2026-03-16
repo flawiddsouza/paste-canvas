@@ -236,6 +236,11 @@ export class FsAdapter implements StorageAdapter {
     return this.viewports[String(tabId)] ?? null;
   }
 
+  async deleteViewport(tabId: number): Promise<void> {
+    delete this.viewports[String(tabId)];
+    await this.flushViewports();
+  }
+
   async saveActiveTab(tabId: number): Promise<void> {
     this.activeTabId = tabId;
     await this.flushWorkspace();

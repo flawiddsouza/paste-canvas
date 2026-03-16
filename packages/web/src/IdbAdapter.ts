@@ -91,6 +91,10 @@ export class IdbAdapter implements StorageAdapter {
     return { panX: row.panX, panY: row.panY, scale: row.scale };
   }
 
+  async deleteViewport(tabId: number): Promise<void> {
+    del(await this.db, 'meta', `viewport-${tabId}`);
+  }
+
   async saveActiveTab(tabId: number): Promise<void> {
     put(await this.db, 'meta', { key: 'activeTab', tabId });
   }

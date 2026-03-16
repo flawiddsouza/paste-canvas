@@ -115,6 +115,7 @@ export interface StorageAdapter {
   // Viewport & active tab
   saveViewport(tabId: number, state: ViewportState): Promise<void>;
   loadViewport(tabId: number): Promise<ViewportState | null>;
+  deleteViewport(tabId: number): Promise<void>;
   saveActiveTab(tabId: number): Promise<void>;
   loadActiveTab(): Promise<number | null>;
 }

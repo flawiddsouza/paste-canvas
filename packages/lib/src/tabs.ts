@@ -227,6 +227,7 @@ export async function deleteTab(ctx: Ctx, tabId: number): Promise<void> {
     if (edge.tabId === tabId) ctx.adapter.deleteEdge(edge.id);
   }
   ctx.adapter.deleteTab(tabId);
+  ctx.adapter.deleteViewport(tabId);
   const oldHistory = ctx.tabHistory.get(tabId);
   if (oldHistory) {
     for (const c of [...oldHistory.undoStack, ...oldHistory.redoStack]) c.dispose?.();
