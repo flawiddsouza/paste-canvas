@@ -9,7 +9,7 @@ interface WorkspaceFile {
   activeTabId: number | null;
 }
 
-type ItemRecord = Omit<ItemData, 'imageData' | 'binaryData'>;
+type ItemRecord = Omit<ItemData, 'binaryData'>;
 
 interface BoardFile {
   items: ItemRecord[];
@@ -190,15 +190,12 @@ export class FsaAdapter implements StorageAdapter {
   // ── StorageAdapter — Items ────────────────────────────────────────────
 
   async putItem(item: ItemData): Promise<void> {
-    const { imageData, binaryData, ...rest } = item;
+    const { binaryData, ...rest } = item;
     if (binaryData) {
       for (const [key, buf] of Object.entries(binaryData)) {
         this.onWrite();
         await writeBinary(this.imagesDirHandle, this.binName(item.id, key), buf);
       }
-    } else if (item.type === 'img' && imageData) {
-      this.onWrite();
-      await writeBinary(this.imagesDirHandle, this.binName(item.id, 'image'), imageData);
     }
     this.items.set(item.id, rest);
     await this.flushBoard(item.tabId);
@@ -210,7 +207,7 @@ export class FsaAdapter implements StorageAdapter {
     if (!item) return;
     this.items.delete(id);
     this.onWrite();
-    const keys = item.binaryKeys ?? (item.type === 'img' ? ['image'] : []);
+    const keys = item.binaryKeys ?? [];
     for (const key of keys) {
       await removeEntry(this.imagesDirHandle, this.binName(id, key));
     }
@@ -228,9 +225,6 @@ export class FsaAdapter implements StorageAdapter {
           if (buf) binaryData[key] = buf;
         }
         results.push({ ...item, binaryData });
-      } else if (item.type === 'img') {
-        const buf = await readBinary(this.imagesDirHandle, this.binName(item.id, 'image'));
-        results.push(buf ? { ...item, imageData: buf } : { ...item });
       } else {
         results.push({ ...item });
       }

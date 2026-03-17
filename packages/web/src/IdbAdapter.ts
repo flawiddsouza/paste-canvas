@@ -1,17 +1,64 @@
 import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
 
 const DB_NAME    = 'paste-canvas';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
-      const d = (e.target as IDBOpenDBRequest).result;
+      const d  = (e.target as IDBOpenDBRequest).result;
+      const tx = (e.target as IDBOpenDBRequest).transaction!;
+
+      // Store creation (no-ops if already exist — required for fresh installs at any old version)
       if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('meta'))  d.createObjectStore('meta',  { keyPath: 'key' });
       if (!d.objectStoreNames.contains('tabs'))  d.createObjectStore('tabs',  { keyPath: 'id' });
       if (!d.objectStoreNames.contains('edges')) d.createObjectStore('edges', { keyPath: 'id' });
+
+      // v3 → v4: migrate items from legacy per-field format to pluginData/binaryData
+      if (e.oldVersion < 4 && e.oldVersion > 0) {
+        const store = tx.objectStore('items');
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = (ev) => {
+          const cursor = (ev.target as IDBRequest<IDBCursorWithValue | null>).result;
+          if (!cursor) return;
+          const item = cursor.value as Record<string, unknown>;
+          if (item.pluginData === undefined) {
+            if (item.type === 'note' || item.type === 'group') {
+              item.pluginData = { text: item.text, color: item.color, width: item.width };
+              // Note: height is intentionally omitted — NotePlugin.hydrate() does not read it
+            } else if (item.type === 'img') {
+              item.pluginData = { label: item.label, displayW: item.width };
+              if (item.imageData) {
+                item.binaryData = { image: item.imageData };
+                item.binaryKeys = ['image'];
+              }
+            }
+          }
+          delete item.text; delete item.color; delete item.width; delete item.height;
+          delete item.imageData; delete item.imageType; delete item.label;
+          cursor.update(item);
+          cursor.continue();
+        };
+
+        // Migrate legacy viewport stored at key `viewport-0` (old single-tab format)
+        // Re-key it to `viewport-{firstTabId}` if a first tab exists
+        const vpReq = tx.objectStore('meta').get('viewport-0');
+        vpReq.onsuccess = (ev) => {
+          const vp = (ev.target as IDBRequest).result;
+          if (!vp) return;
+          const tabReq = tx.objectStore('tabs').getAll();
+          tabReq.onsuccess = (ev2) => {
+            const tabs = ((ev2.target as IDBRequest).result as TabData[])
+              .sort((a, b) => a.order - b.order);
+            if (tabs.length > 0) {
+              tx.objectStore('meta').put({ key: `viewport-${tabs[0].id}`, panX: vp.panX, panY: vp.panY, scale: vp.scale });
+            }
+            tx.objectStore('meta').delete('viewport-0');
+          };
+        };
+      }
     };
     req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
     req.onerror   = (e) => reject((e.target as IDBOpenDBRequest).error);

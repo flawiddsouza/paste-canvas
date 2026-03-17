@@ -17,9 +17,6 @@ export interface ItemData {
   pluginData?: unknown;
   binaryData?: Record<string, ArrayBuffer>;
   binaryKeys?: string[];
-  // Legacy fields — kept for migration shim; fall away naturally after write-through
-  text?: string; color?: string; width?: number; height?: number;
-  imageData?: ArrayBuffer; imageType?: string; label?: string;
 }
 
 export interface TabData {

@@ -21,6 +21,7 @@ export class MemoryAdapter implements StorageAdapter {
 
   async saveViewport(tabId: number, state: ViewportState): Promise<void> { this.viewports.set(tabId, state); }
   async loadViewport(tabId: number): Promise<ViewportState | null>       { return this.viewports.get(tabId) ?? null; }
+  async deleteViewport(tabId: number): Promise<void>                     { this.viewports.delete(tabId); }
 
   async saveActiveTab(tabId: number): Promise<void>    { this.activeTab = tabId; }
   async loadActiveTab(): Promise<number | null>        { return this.activeTab; }

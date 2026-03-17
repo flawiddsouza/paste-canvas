@@ -28,6 +28,7 @@ class MemoryAdapter implements StorageAdapter {
   async loadViewport(tabId: number) {
     return this.viewports.get(`vp-${tabId}`) ?? null;
   }
+  async deleteViewport(tabId: number) { this.viewports.delete(`vp-${tabId}`); }
   async saveActiveTab(tabId: number) { this.activeTab = tabId; }
   async loadActiveTab()              { return this.activeTab; }
 }
@@ -91,8 +92,9 @@ async function seedAdapter(adapter: MemoryAdapter, count: number): Promise<void>
       id: i + 1, type: 'img', tabId: 1,
       x: positions[i].x, y: positions[i].y,
       w: 200, h: 150, zIndex: i + 1,
-      imageData: buffer, imageType: 'image/png',
-      width: 200, label: `#${i + 1}`,
+      pluginData: { label: `#${i + 1}`, displayW: 200 },
+      binaryData: { image: buffer },
+      binaryKeys: ['image'],
     });
   }));
 }

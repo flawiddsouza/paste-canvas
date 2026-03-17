@@ -1,5 +1,4 @@
-import type { Ctx, EdgeRecord, ItemData } from './types.js';
-import type { StoredPlugin } from './plugin.js';
+import type { Ctx, EdgeRecord } from './types.js';
 import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache, toast, showConfirm } from './canvas.js';
 import { renderEdge } from './edges.js';
 import { createItem } from './items.js';
@@ -23,38 +22,11 @@ export function unloadItems(ctx: Ctx): void {
   invalidateOverviewCache(ctx);
 }
 
-// ── Build StoredPlugin from ItemData (new or legacy format) ──────────────────
-
-function storedFromItemData(saved: ItemData): StoredPlugin {
-  if (saved.pluginData !== undefined) {
-    return { data: saved.pluginData, binary: saved.binaryData };
-  }
-  // Legacy migration from old per-field format
-  switch (saved.type) {
-    case 'note':
-      return { data: { text: saved.text, color: saved.color, width: saved.width, height: saved.height } };
-    case 'img':
-      return {
-        data:   { label: saved.label, displayW: saved.width },
-        binary: saved.imageData ? { image: saved.imageData } : undefined,
-      };
-    case 'group':
-      return { data: { text: saved.text } };
-    default:
-      return {};
-  }
-}
-
 // ── Load a tab ────────────────────────────────────────────────────────────────
 
 export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   // Apply saved viewport BEFORE rendering items to avoid flash of movement
-  const firstTabId = ctx.tabs[0]?.id;
   let vp = await ctx.adapter.loadViewport(tabId);
-  if (!vp && tabId === firstTabId) {
-    // legacy fallback: try loading without a tabId key (old single-tab data)
-    vp = await ctx.adapter.loadViewport(0);
-  }
   ctx.panX  = vp?.panX  ?? 0;
   ctx.panY  = vp?.panY  ?? 0;
   ctx.scale = vp?.scale ?? 1;
@@ -62,7 +34,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
 
   const allItems = await ctx.adapter.getAllItems();
   const tabItems = allItems
-    .filter(s => s.tabId === tabId || (s.tabId === undefined && tabId === firstTabId))
+    .filter(s => s.tabId === tabId)
     .sort((a, b) => a.zIndex - b.zIndex);
 
   for (const saved of tabItems) {
@@ -70,7 +42,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
       id: saved.id, zIndex: saved.zIndex, skipSelect: true, skipMount: true,
     });
     rec.bound.suppressDuring(() => {
-      try { rec.bound.hydrate(storedFromItemData(saved)); }
+      try { rec.bound.hydrate({ data: saved.pluginData ?? null, binary: saved.binaryData }); }
       catch (e) { console.error(`[paste-canvas] hydrate() failed for type "${saved.type}"`, e); }
     });
     if (saved.w != null) { rec.el.style.width  = saved.w + 'px'; rec.w = saved.w; }
