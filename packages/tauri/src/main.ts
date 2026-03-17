@@ -1,5 +1,6 @@
-import { createCanvas, PasteCanvas } from '@paste-canvas/lib';
+import { createCanvas, defaultPlugins, ExportImportPlugin, PasteCanvas } from '@paste-canvas/lib';
 import type { StorageAdapter } from '@paste-canvas/lib';
+import { TauriControlsPlugin } from './TauriControlsPlugin.js';
 import { FsAdapter } from './FsAdapter.js';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 import { watch, type UnwatchFn } from '@tauri-apps/plugin-fs';
@@ -102,8 +103,17 @@ function mountCanvas(adapter: StorageAdapter): void {
   canvasContainer = document.createElement('div');
   canvasContainer.style.cssText = 'position:absolute;inset:0';
   document.body.appendChild(canvasContainer);
-  canvas = createCanvas(canvasContainer, adapter).mount();
-  injectToolbarButtons();
+  canvas = createCanvas(canvasContainer, adapter, {
+    plugins: [
+      ...defaultPlugins,
+      ExportImportPlugin(),
+      TauriControlsPlugin({
+        onOpenFolder: () => void handleOpenFolder(),
+        onClose:      () => void handleCloseFolder(),
+        onNewWindow:  openNewWindow,
+      }),
+    ],
+  }).mount();
 }
 
 // ── Landing screen ────────────────────────────────────────────────────────
@@ -122,33 +132,6 @@ function showLanding(): void {
   el.querySelector('#pc-landing-open')!.addEventListener('click', () => void handleOpenFolder());
   el.querySelector('#pc-landing-new-window')!.addEventListener('click', openNewWindow);
   document.body.appendChild(el);
-}
-
-// ── Toolbar injection ─────────────────────────────────────────────────────
-
-function injectToolbarButtons(): void {
-  const toolbar = canvasContainer!.querySelector<HTMLElement>('.pc-toolbar');
-  if (!toolbar) return;
-
-  const sep = document.createElement('div');
-  sep.className = 'sep';
-
-  const openBtn = document.createElement('button');
-  openBtn.className = 'btn';
-  openBtn.textContent = 'Open Folder';
-  openBtn.addEventListener('click', () => void handleOpenFolder());
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'btn';
-  closeBtn.textContent = 'Close';
-  closeBtn.addEventListener('click', () => void handleCloseFolder());
-
-  const newWinBtn = document.createElement('button');
-  newWinBtn.className = 'btn';
-  newWinBtn.textContent = 'New Window';
-  newWinBtn.addEventListener('click', openNewWindow);
-
-  toolbar.append(sep, openBtn, closeBtn, newWinBtn);
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────

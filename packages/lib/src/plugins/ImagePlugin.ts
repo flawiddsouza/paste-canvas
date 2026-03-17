@@ -101,6 +101,7 @@ function buildDom(api: PluginAPI): ImageView {
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
 export const ImagePlugin: ItemPlugin<ImageView, ImageSnap> = {
+  kind:          'item',
   type:          'img',
   label:         'Image',
   resize:        'width',

@@ -10,6 +10,7 @@ interface GroupSnap {
 }
 
 export const GroupPlugin: ItemPlugin<GroupView, GroupSnap> = {
+  kind:      'item',
   type:      'group',
   label:     'Group',
   container: true,

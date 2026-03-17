@@ -24,7 +24,7 @@ export const css = `
     background: #252525;
     border-bottom: 1px solid #333;
     flex-shrink: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .paste-canvas-root .pc-toolbar h1 {
@@ -50,12 +50,52 @@ export const css = `
 
   .paste-canvas-root .sep { width: 1px; height: 24px; background: #444; }
 
-  .paste-canvas-root .pc-zoom-label {
-    font-size: 12px;
-    color: #888;
-    min-width: 38px;
-    text-align: right;
+  .paste-canvas-root .pc-btn-help { order: 999; margin-left: auto; margin-right: 4px; }
+
+  .paste-canvas-root .pc-dropdown { position: relative; display: inline-flex; }
+  .paste-canvas-root .pc-dropdown-btn::after { content: ' ▾'; font-size: 10px; opacity: 0.7; }
+
+  .paste-canvas-root .pc-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 5px;
+    padding: 4px 0;
+    min-width: 130px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   }
+
+  .paste-canvas-root .pc-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    color: #ddd;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .paste-canvas-root .pc-dropdown-item:hover { background: #3a3a3a; }
+
+  .paste-canvas-root .pc-zoom-label {
+    padding: 3px 9px;
+    border: 1px solid #444;
+    border-radius: 5px;
+    background: #333;
+    color: #aaa;
+    font-size: 12px;
+    min-width: 38px;
+    text-align: center;
+    user-select: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .paste-canvas-root .pc-zoom-label:hover { background: #444; border-color: #666; }
 
   .paste-canvas-root .pc-coords-label {
     position: absolute;

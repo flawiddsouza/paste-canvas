@@ -49,6 +49,7 @@ export interface ItemPlugin<
   TView extends { el: HTMLElement } = { el: HTMLElement },
   TSnap = unknown,
 > {
+  kind: 'item';
   type:  string;
   label: string;   // e.g. "Note", "Image", "Group" — used in delete labels and tab counts
 

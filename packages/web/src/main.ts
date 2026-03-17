@@ -1,5 +1,6 @@
 // packages/web/src/main.ts
-import { createCanvas, PasteCanvas } from '@paste-canvas/lib';
+import { createCanvas, PasteCanvas, defaultPlugins, ExportImportPlugin } from '@paste-canvas/lib';
+import { WebControlsPlugin } from './WebControlsPlugin.js';
 import type { StorageAdapter } from '@paste-canvas/lib';
 import { IdbAdapter } from './IdbAdapter.js';
 import { FsaAdapter } from './FsaAdapter.js';
@@ -145,8 +146,16 @@ function mountCanvas(adapter: StorageAdapter): void {
   canvasContainer = document.createElement('div');
   canvasContainer.style.cssText = 'position:absolute;inset:0';
   document.body.appendChild(canvasContainer);
-  canvas = createCanvas(canvasContainer, adapter).mount();
-  injectToolbarButtons();
+  canvas = createCanvas(canvasContainer, adapter, {
+    plugins: [
+      ...defaultPlugins,
+      ExportImportPlugin(),
+      WebControlsPlugin({
+        onOpenFolder: fsaSupported ? () => void handleOpenFolder() : undefined,
+        onClose: () => void (fsaAdapter ? handleCloseFolder() : handleCloseBrowser()),
+      }),
+    ],
+  }).mount();
 }
 
 // ── Landing screen ────────────────────────────────────────────────────────
@@ -187,30 +196,6 @@ function showLanding(
   }
 
   document.body.appendChild(el);
-}
-
-// ── Toolbar injection ─────────────────────────────────────────────────────
-
-function injectToolbarButtons(): void {
-  const toolbar = canvasContainer!.querySelector<HTMLElement>('.pc-toolbar');
-  if (!toolbar) return;
-
-  const sep = document.createElement('div');
-  sep.className = 'sep';
-
-  if (fsaSupported) {
-    const openBtn = document.createElement('button');
-    openBtn.className = 'btn';
-    openBtn.textContent = 'Open Folder';
-    openBtn.addEventListener('click', () => void handleOpenFolder());
-    toolbar.append(sep, openBtn);
-  }
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'btn';
-  closeBtn.textContent = 'Close';
-  closeBtn.addEventListener('click', () => void (fsaAdapter ? handleCloseFolder() : handleCloseBrowser()));
-  toolbar.append(closeBtn);
 }
 
 // ── Settings IndexedDB ────────────────────────────────────────────────────

@@ -1,6 +1,9 @@
 // ── Serialisable data types (persisted via StorageAdapter) ─────────────────
 
 import type { BoundView, ItemPlugin } from './plugin.js';
+import type { CanvasPlugin } from './canvas-plugin.js';
+
+export type Plugin = ItemPlugin | CanvasPlugin | readonly Plugin[];
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 
@@ -176,6 +179,7 @@ export interface Ctx {
   // Adapter
   adapter: StorageAdapter;
   itemPlugins: Map<string, ItemPlugin>;
+  canvasPlugins: CanvasPlugin[];
 
   // Config
   edgeDropType: string;

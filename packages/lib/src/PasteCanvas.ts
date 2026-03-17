@@ -1,5 +1,6 @@
-import type { Ctx, StorageAdapter } from './types.js';
+import type { Ctx, StorageAdapter, Plugin } from './types.js';
 import type { ItemPlugin, StoredPlugin } from './plugin.js';
+import type { CanvasPlugin, CanvasAPI, ToolbarItem } from './canvas-plugin.js';
 import { PastePriority } from './plugin.js';
 import { injectStyles } from './style.js';
 import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
@@ -13,14 +14,78 @@ import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './ed
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
 import { initContextMenu } from './context-menu.js';
 
+function renderToolbarItem(item: ToolbarItem, signal: AbortSignal): HTMLElement {
+  if (item.kind === 'separator') {
+    const el = document.createElement('div');
+    el.className = 'sep';
+    return el;
+  }
+
+  if (item.kind === 'button') {
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = item.label;
+    btn.addEventListener('click', item.onClick, { signal });
+    return btn;
+  }
+
+  // kind === 'dropdown'
+  const wrap = document.createElement('div');
+  wrap.className = 'pc-dropdown';
+
+  const btn = document.createElement('button');
+  btn.className = 'btn pc-dropdown-btn';
+  btn.textContent = item.label;
+
+  const menu = document.createElement('div');
+  menu.className = 'pc-dropdown-menu';
+  menu.hidden = true;
+
+  for (const mi of item.items) {
+    const mBtn = document.createElement('button');
+    mBtn.className = 'pc-dropdown-item';
+    mBtn.textContent = mi.label;
+    mBtn.addEventListener('click', () => { menu.hidden = true; mi.onClick(); }, { signal });
+    menu.appendChild(mBtn);
+  }
+
+  let closeHandler: (() => void) | null = null;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!menu.hidden) {
+      menu.hidden = true;
+      if (closeHandler) { document.removeEventListener('click', closeHandler); closeHandler = null; }
+      return;
+    }
+    menu.hidden = false;
+    closeHandler = () => { menu.hidden = true; closeHandler = null; };
+    document.addEventListener('click', closeHandler, { once: true, signal });
+  }, { signal });
+
+  wrap.append(btn, menu);
+  return wrap;
+}
+
+function flattenPlugins(plugins: readonly Plugin[]): (ItemPlugin | CanvasPlugin)[] {
+  const result: (ItemPlugin | CanvasPlugin)[] = [];
+  for (const p of plugins) {
+    if (Array.isArray(p)) {
+      result.push(...flattenPlugins(p as Plugin[]));
+    } else {
+      result.push(p as ItemPlugin | CanvasPlugin);
+    }
+  }
+  return result;
+}
+
 export interface PasteCanvasOptions {
   title?: string;
-  itemTypes?: ItemPlugin[];
+  plugins?: Plugin[];
   /** Item type to create when dragging an edge to empty canvas. Defaults to 'note'. */
   edgeDropType?: string;
 }
 
-export const defaultPlugins: ItemPlugin[] = [ImagePlugin, NotePlugin, GroupPlugin];
+export const defaultPlugins: Plugin[] = [ImagePlugin, NotePlugin, GroupPlugin];
 
 export function createCanvas(container: HTMLElement, adapter: StorageAdapter, opts?: PasteCanvasOptions): PasteCanvas {
   return new PasteCanvas(container, adapter, opts);
@@ -112,7 +177,7 @@ export class PasteCanvas {
 
     const q = <T extends Element>(sel: string) => container.querySelector<T>(sel)!;
 
-    const plugins = opts?.itemTypes ?? defaultPlugins;
+    const flat = flattenPlugins(opts?.plugins ?? defaultPlugins);
 
     // ── Build context ──────────────────────────────────────────────────────
     this.ctx = {
@@ -139,7 +204,10 @@ export class PasteCanvas {
       arrowheadId,
       signal: this.abort.signal,
 
-      itemPlugins: new Map(plugins.map(p => [p.type, p])),
+      itemPlugins: new Map(
+        flat.filter((p): p is ItemPlugin => p.kind === 'item').map(p => [p.type, p])
+      ),
+      canvasPlugins: flat.filter((p): p is CanvasPlugin => p.kind === 'canvas'),
 
       adapter,
       edgeDropType: opts?.edgeDropType ?? 'note',
@@ -153,22 +221,56 @@ export class PasteCanvas {
       if (this.ctx.items.length === 0) {
         toast(this.ctx, 'Ctrl+V to paste images or text  \u00b7  Scroll to zoom  \u00b7  Drag to pan', 3500);
       }
+      const api = this.makeCanvasAPI();
+      for (const cp of this.ctx.canvasPlugins) cp.onMount?.(api);
     });
     return this;
   }
 
   destroy(): void {
+    for (const cp of this.ctx.canvasPlugins) cp.onDestroy?.();
     this.abort.abort();
     this.ctx.surface.closest('.paste-canvas-root')?.remove();
   }
 
   // ── Internal setup ────────────────────────────────────────────────────────
 
+  private makeCanvasAPI(): CanvasAPI {
+    const ctx = this.ctx;
+    return {
+      get adapter() { return ctx.adapter; },
+      get currentTabId() { return ctx.currentTabId; },
+      toast: (msg: string) => toast(ctx, msg),
+      refreshTabs: async () => {
+        const [allTabs, allItems, allEdges] = await Promise.all([
+          ctx.adapter.getAllTabs(),
+          ctx.adapter.getAllItems(),
+          ctx.adapter.getAllEdges(),
+        ]);
+        const existingIds = new Set(ctx.tabs.map(t => t.id));
+        const newTabs = allTabs.filter(t => !existingIds.has(t.id));
+        if (newTabs.length === 0) return;
+        ctx.tabs.push(...newTabs);
+        renderTabBar(ctx);
+        ctx.tabCounter  = Math.max(0, ...ctx.tabs.map(t => t.id));
+        ctx.itemCounter = Math.max(0, ...allItems.map(i => i.id));
+        ctx.zCounter    = Math.max(0, ...allItems.map(i => i.zIndex ?? 0));
+        ctx.edgeCounter = Math.max(0, ...allEdges.map(e => e.id));
+      },
+    };
+  }
+
   private setupInteraction(container: HTMLElement): void {
     const ctx = this.ctx;
     initViewport(ctx);
     initToolbarHover(ctx);
     this.setupToolbarButtons(container);
+    const api = this.makeCanvasAPI();
+    const toolbar = container.querySelector<HTMLDivElement>('.pc-toolbar')!;
+    for (const cp of ctx.canvasPlugins) {
+      const items = cp.toolbarButtons?.(api) ?? [];
+      for (const item of items) toolbar.appendChild(renderToolbarItem(item, ctx.signal));
+    }
     this.setupPaste();
     this.setupKeyboard(container);
     initContextMenu(ctx, () => this.deleteSelectedItems(), () => this.deleteSelectedEdges());
@@ -227,6 +329,16 @@ export class PasteCanvas {
 
     q('.pc-btn-reset-view').addEventListener('click', () => {
       ctx.scale = 1; ctx.panX = 0; ctx.panY = 0;
+      applyTransform(ctx);
+      saveViewport(ctx);
+    }, { signal });
+
+    q('.pc-zoom-label').addEventListener('click', () => {
+      const vr = ctx.viewport.getBoundingClientRect();
+      const mx = vr.width / 2, my = vr.height / 2;
+      ctx.panX = mx - (mx - ctx.panX) * (1 / ctx.scale);
+      ctx.panY = my - (my - ctx.panY) * (1 / ctx.scale);
+      ctx.scale = 1;
       applyTransform(ctx);
       saveViewport(ctx);
     }, { signal });

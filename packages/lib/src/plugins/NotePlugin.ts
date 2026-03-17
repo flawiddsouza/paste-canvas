@@ -78,6 +78,7 @@ async function copyNoteText(view: NoteView, api: PluginAPI): Promise<void> {
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
 export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
+  kind:          'item',
   type:          'note',
   label:         'Note',
   resize:        'both',

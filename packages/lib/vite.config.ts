@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import dts from 'vite-plugin-dts';
+import { playwright } from '@vitest/browser-playwright';
 
 export default defineConfig({
   plugins: [
@@ -13,5 +14,15 @@ export default defineConfig({
       fileName: 'index',
     },
     sourcemap: true,
+  },
+  test: {
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      headless: true,
+      instances: [
+        { browser: 'chromium' },
+      ],
+    },
   },
 });
