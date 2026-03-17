@@ -8,7 +8,13 @@ export function getGroupMembers(ctx: Ctx, groupId: number): ItemRecord[] {
 }
 
 export function groupSelectedItems(ctx: Ctx): void {
-  const candidates = [...ctx.selectedItems].filter(i => !ctx.itemPlugins.get(i.type)?.container);
+  const candidates = [...ctx.selectedItems].filter(i => {
+    if (i.groupId != null) {
+      const group = ctx.itemsById.get(i.groupId);
+      if (group && ctx.selectedItems.has(group)) return false;
+    }
+    return true;
+  });
   if (candidates.length === 0) {
     toast(ctx, 'Select items to group');
     return;
@@ -36,6 +42,10 @@ export function groupSelectedItems(ctx: Ctx): void {
   groupRec.w = gw;
   groupRec.h = gh;
 
+  const groupId        = groupRec.id;
+  const memberIds      = candidates.map(i => i.id);
+  const prevGroupIds   = candidates.map(i => i.groupId);
+
   for (const item of candidates) {
     item.groupId = groupRec.id;
     void saveItem(ctx, item.id);
@@ -43,15 +53,12 @@ export function groupSelectedItems(ctx: Ctx): void {
   void saveItem(ctx, groupRec.id);
   selectItem(ctx, groupRec);
 
-  const groupId   = groupRec.id;
-  const memberIds = candidates.map(i => i.id);
-
   pushUndo(ctx, {
     label: 'group',
     undo() {
-      for (const mid of memberIds) {
-        const m = ctx.itemsById.get(mid);
-        if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
+      for (let i = 0; i < memberIds.length; i++) {
+        const m = ctx.itemsById.get(memberIds[i]);
+        if (m) { m.groupId = prevGroupIds[i]; void saveItem(ctx, m.id); }
       }
       const g = ctx.itemsById.get(groupId);
       if (g) removeItem(ctx, g);

@@ -504,6 +504,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
   let beforeDrag: Map<number, { x: number; y: number }>;
   let movingItems: Set<ItemRecord>;
   let passengers: ItemRecord[] = [];
+  let passengerRelOffsets: Map<ItemRecord, { rx: number; ry: number }>;
 
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -540,22 +541,28 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     startPositions = new Map();
     beforeDrag = new Map();
     passengers = [];
+    passengerRelOffsets = new Map();
+    const addPassengers = (container: ItemRecord) => {
+      const cx = parseFloat(container.el.style.left) || 0;
+      const cy = parseFloat(container.el.style.top)  || 0;
+      for (const member of ctx.items.filter(i => i.groupId === container.id)) {
+        if (!startPositions.has(member)) {
+          passengers.push(member);
+          const mx = parseFloat(member.el.style.left) || 0;
+          const my = parseFloat(member.el.style.top)  || 0;
+          startPositions.set(member, { x: mx, y: my });
+          beforeDrag.set(member.id, { x: mx, y: my });
+          passengerRelOffsets.set(member, { rx: mx - cx, ry: my - cy });
+          if (ctx.itemPlugins.get(member.type)?.container) addPassengers(member);
+        }
+      }
+    };
     for (const item of ctx.selectedItems) {
       const sx = parseFloat(item.el.style.left) || 0;
       const sy = parseFloat(item.el.style.top)  || 0;
       startPositions.set(item, { x: sx, y: sy });
       beforeDrag.set(item.id, { x: sx, y: sy });
-      if (ctx.itemPlugins.get(item.type)?.container) {
-        for (const member of ctx.items.filter(i => i.groupId === item.id)) {
-          if (!ctx.selectedItems.has(member)) {
-            passengers.push(member);
-            const mx = parseFloat(member.el.style.left) || 0;
-            const my = parseFloat(member.el.style.top)  || 0;
-            startPositions.set(member, { x: mx, y: my });
-            beforeDrag.set(member.id, { x: mx, y: my });
-          }
-        }
-      }
+      if (ctx.itemPlugins.get(item.type)?.container) addPassengers(item);
     }
     movingItems = new Set(startPositions.keys());
   });
@@ -567,15 +574,25 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     const cy = (e.clientY - vr.top  - ctx.panY) / ctx.scale;
     const dx = cx - startCanvasX, dy = cy - startCanvasY;
     for (const [item, start] of startPositions) {
-      let nx = start.x + dx;
-      let ny = start.y + dy;
-      if (item.groupId != null) {
-        const group = ctx.itemsById.get(item.groupId);
-        if (group && !movingItems.has(group)) {
-          const iw = item.w || item.el.offsetWidth || 200;
-          const ih = item.h || item.el.offsetHeight || 200;
-          nx = Math.max(group.x, Math.min(group.x + group.w - iw, nx));
-          ny = Math.max(group.y, Math.min(group.y + group.h - ih, ny));
+      let nx: number, ny: number;
+      const rel = passengerRelOffsets.get(item);
+      if (rel) {
+        // Passenger: track parent container's actual (possibly clamped) position
+        const group = ctx.itemsById.get(item.groupId!);
+        nx = group ? group.x + rel.rx : start.x + dx;
+        ny = group ? group.y + rel.ry : start.y + dy;
+      } else {
+        // Selected item: move by dx/dy, clamp if parent group is stationary
+        nx = start.x + dx;
+        ny = start.y + dy;
+        if (item.groupId != null) {
+          const group = ctx.itemsById.get(item.groupId);
+          if (group && !movingItems.has(group)) {
+            const iw = item.w || item.el.offsetWidth || 200;
+            const ih = item.h || item.el.offsetHeight || 200;
+            nx = Math.max(group.x, Math.min(group.x + group.w - iw, nx));
+            ny = Math.max(group.y, Math.min(group.y + group.h - ih, ny));
+          }
         }
       }
       item.el.style.left = nx + 'px';
