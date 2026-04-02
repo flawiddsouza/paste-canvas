@@ -369,7 +369,9 @@ async function handleReopen(stored: {
   handle: FileSystemDirectoryHandle;
   name: string;
 }): Promise<void> {
-  const perm = await stored.handle.requestPermission({ mode: 'readwrite' });
+  const perm = await (stored.handle as FileSystemDirectoryHandle & {
+    requestPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+  }).requestPermission({ mode: 'readwrite' });
   if (perm !== 'granted') {
     await clearHandleFromSettings();
     showLanding(); // re-render without Reopen button
@@ -425,7 +427,9 @@ async function boot(): Promise<void> {
   if (fsaSupported) {
     const stored = await getStoredHandle().catch(() => null);
     if (stored) {
-      const perm = await stored.handle.queryPermission({ mode: 'readwrite' });
+      const perm = await (stored.handle as FileSystemDirectoryHandle & {
+        queryPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+      }).queryPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
         try {
           await openFolder(stored.handle, stored.name);

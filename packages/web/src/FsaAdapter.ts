@@ -179,6 +179,23 @@ export class FsaAdapter implements StorageAdapter {
     await writeText(this.rootDirHandle, 'viewport.json', JSON.stringify(this.viewports, null, 2));
   }
 
+  private async materializeItems(items: Iterable<ItemRecord>): Promise<ItemData[]> {
+    const results: ItemData[] = [];
+    for (const item of items) {
+      if (item.binaryKeys?.length) {
+        const binaryData: Record<string, ArrayBuffer> = {};
+        for (const key of item.binaryKeys) {
+          const buf = await readBinary(this.imagesDirHandle, this.binName(item.id, key));
+          if (buf) binaryData[key] = buf;
+        }
+        results.push({ ...item, binaryData });
+      } else {
+        results.push({ ...item });
+      }
+    }
+    return results;
+  }
+
   async flushAll(): Promise<void> {
     await this.flushWorkspace();
     await this.flushViewports();
@@ -216,20 +233,13 @@ export class FsaAdapter implements StorageAdapter {
   }
 
   async getAllItems(): Promise<ItemData[]> {
-    const results: ItemData[] = [];
-    for (const item of this.items.values()) {
-      if (item.binaryKeys?.length) {
-        const binaryData: Record<string, ArrayBuffer> = {};
-        for (const key of item.binaryKeys) {
-          const buf = await readBinary(this.imagesDirHandle, this.binName(item.id, key));
-          if (buf) binaryData[key] = buf;
-        }
-        results.push({ ...item, binaryData });
-      } else {
-        results.push({ ...item });
-      }
-    }
-    return results;
+    return this.materializeItems(this.items.values());
+  }
+
+  async getItemsForTab(tabId: number): Promise<ItemData[]> {
+    return this.materializeItems(
+      [...this.items.values()].filter(item => item.tabId === tabId)
+    );
   }
 
   // ── StorageAdapter — Tabs ─────────────────────────────────────────────
@@ -270,6 +280,10 @@ export class FsaAdapter implements StorageAdapter {
 
   async getAllEdges(): Promise<EdgeData[]> {
     return [...this.edges.values()];
+  }
+
+  async getEdgesForTab(tabId: number): Promise<EdgeData[]> {
+    return [...this.edges.values()].filter(edge => edge.tabId === tabId);
   }
 
   // ── StorageAdapter — Viewport & active tab ────────────────────────────

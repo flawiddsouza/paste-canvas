@@ -242,20 +242,22 @@ export class PasteCanvas {
       get currentTabId() { return ctx.currentTabId; },
       toast: (msg: string) => toast(ctx, msg),
       refreshTabs: async () => {
-        const [allTabs, allItems, allEdges] = await Promise.all([
-          ctx.adapter.getAllTabs(),
-          ctx.adapter.getAllItems(),
-          ctx.adapter.getAllEdges(),
-        ]);
+        const allTabs = await ctx.adapter.getAllTabs();
         const existingIds = new Set(ctx.tabs.map(t => t.id));
         const newTabs = allTabs.filter(t => !existingIds.has(t.id));
         if (newTabs.length === 0) return;
+        const [newItemLists, newEdgeLists] = await Promise.all([
+          Promise.all(newTabs.map(tab => ctx.adapter.getItemsForTab(tab.id))),
+          Promise.all(newTabs.map(tab => ctx.adapter.getEdgesForTab(tab.id))),
+        ]);
+        const newItems = newItemLists.flat();
+        const newEdges = newEdgeLists.flat();
         ctx.tabs.push(...newTabs);
         renderTabBar(ctx);
         ctx.tabCounter  = Math.max(0, ...ctx.tabs.map(t => t.id));
-        ctx.itemCounter = Math.max(0, ...allItems.map(i => i.id));
-        ctx.zCounter    = Math.max(0, ...allItems.map(i => i.zIndex ?? 0));
-        ctx.edgeCounter = Math.max(0, ...allEdges.map(e => e.id));
+        ctx.itemCounter = Math.max(ctx.itemCounter, ...newItems.map(i => i.id));
+        ctx.zCounter    = Math.max(ctx.zCounter, ...newItems.map(i => i.zIndex ?? 0));
+        ctx.edgeCounter = Math.max(ctx.edgeCounter, ...newEdges.map(e => e.id));
       },
     };
   }

@@ -13,6 +13,7 @@ class MemoryAdapter implements StorageAdapter {
   async putItem(item: ItemData)    { this.items.set(item.id, item); }
   async deleteItem(id: number)     { this.items.delete(id); }
   async getAllItems()               { return [...this.items.values()]; }
+  async getItemsForTab(tabId: number) { return [...this.items.values()].filter(item => item.tabId === tabId); }
 
   async putTab(tab: TabData)       { this.tabs.set(tab.id, tab); }
   async deleteTab(id: number)      { this.tabs.delete(id); }
@@ -21,6 +22,7 @@ class MemoryAdapter implements StorageAdapter {
   async putEdge(edge: EdgeData)    { this.edges.set(edge.id, edge); }
   async deleteEdge(id: number)     { this.edges.delete(id); }
   async getAllEdges()               { return [...this.edges.values()]; }
+  async getEdgesForTab(tabId: number) { return [...this.edges.values()].filter(edge => edge.tabId === tabId); }
 
   async saveViewport(tabId: number, state: ViewportState) {
     this.viewports.set(`vp-${tabId}`, state);

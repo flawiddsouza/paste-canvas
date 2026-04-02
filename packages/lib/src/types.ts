@@ -101,6 +101,7 @@ export interface StorageAdapter {
   putItem(item: ItemData): Promise<void>;
   deleteItem(id: number): Promise<void>;
   getAllItems(): Promise<ItemData[]>;
+  getItemsForTab(tabId: number): Promise<ItemData[]>;
 
   // Tabs
   putTab(tab: TabData): Promise<void>;
@@ -111,6 +112,7 @@ export interface StorageAdapter {
   putEdge(edge: EdgeData): Promise<void>;
   deleteEdge(id: number): Promise<void>;
   getAllEdges(): Promise<EdgeData[]>;
+  getEdgesForTab(tabId: number): Promise<EdgeData[]>;
 
   // Viewport & active tab
   saveViewport(tabId: number, state: ViewportState): Promise<void>;

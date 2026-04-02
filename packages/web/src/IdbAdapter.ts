@@ -1,7 +1,7 @@
 import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
 
 const DB_NAME    = 'paste-canvas';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -15,11 +15,14 @@ function openDB(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains('meta'))  d.createObjectStore('meta',  { keyPath: 'key' });
       if (!d.objectStoreNames.contains('tabs'))  d.createObjectStore('tabs',  { keyPath: 'id' });
       if (!d.objectStoreNames.contains('edges')) d.createObjectStore('edges', { keyPath: 'id' });
+      const itemsStore = tx.objectStore('items');
+      const edgesStore = tx.objectStore('edges');
+      if (!itemsStore.indexNames.contains('tabId')) itemsStore.createIndex('tabId', 'tabId');
+      if (!edgesStore.indexNames.contains('tabId')) edgesStore.createIndex('tabId', 'tabId');
 
       // v3 → v4: migrate items from legacy per-field format to pluginData/binaryData
       if (e.oldVersion < 4 && e.oldVersion > 0) {
-        const store = tx.objectStore('items');
-        const cursorReq = store.openCursor();
+        const cursorReq = itemsStore.openCursor();
         cursorReq.onsuccess = (ev) => {
           const cursor = (ev.target as IDBRequest<IDBCursorWithValue | null>).result;
           if (!cursor) return;
@@ -81,6 +84,19 @@ function getAll<T>(db: IDBDatabase, store: string): Promise<T[]> {
   });
 }
 
+function getAllByIndex<T>(
+  db: IDBDatabase,
+  store: string,
+  index: string,
+  key: IDBValidKey,
+): Promise<T[]> {
+  return new Promise((resolve) => {
+    const req = db.transaction(store).objectStore(store).index(index).getAll(key);
+    req.onsuccess = (e) => resolve((e.target as IDBRequest<T[]>).result);
+    req.onerror   = () => resolve([]);
+  });
+}
+
 function get<T>(db: IDBDatabase, store: string, key: IDBValidKey): Promise<T | null> {
   return new Promise((resolve) => {
     const req = db.transaction(store).objectStore(store).get(key);
@@ -102,6 +118,10 @@ export class IdbAdapter implements StorageAdapter {
 
   async getAllItems(): Promise<ItemData[]> {
     return getAll<ItemData>(await this.db, 'items');
+  }
+
+  async getItemsForTab(tabId: number): Promise<ItemData[]> {
+    return getAllByIndex<ItemData>(await this.db, 'items', 'tabId', tabId);
   }
 
   async putTab(tab: TabData): Promise<void> {
@@ -126,6 +146,10 @@ export class IdbAdapter implements StorageAdapter {
 
   async getAllEdges(): Promise<EdgeData[]> {
     return getAll<EdgeData>(await this.db, 'edges');
+  }
+
+  async getEdgesForTab(tabId: number): Promise<EdgeData[]> {
+    return getAllByIndex<EdgeData>(await this.db, 'edges', 'tabId', tabId);
   }
 
   async saveViewport(tabId: number, state: ViewportState): Promise<void> {

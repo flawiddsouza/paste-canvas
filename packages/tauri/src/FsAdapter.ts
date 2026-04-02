@@ -110,6 +110,26 @@ export class FsAdapter implements StorageAdapter {
     await writeTextFile(this.vpPath(), JSON.stringify(this.viewports, null, 2));
   }
 
+  private async materializeItems(items: Iterable<ItemRecord>): Promise<ItemData[]> {
+    const results: ItemData[] = [];
+    for (const item of items) {
+      if (item.binaryKeys?.length) {
+        const binaryData: Record<string, ArrayBuffer> = {};
+        for (const key of item.binaryKeys) {
+          const p = this.binPath(item.id, key);
+          if (await exists(p)) {
+            const bytes = await readFile(p);
+            binaryData[key] = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+          }
+        }
+        results.push({ ...item, binaryData });
+      } else {
+        results.push({ ...item });
+      }
+    }
+    return results;
+  }
+
   async flushAll(): Promise<void> {
     await this.flushWorkspace();
     await this.flushViewports();
@@ -148,23 +168,13 @@ export class FsAdapter implements StorageAdapter {
   }
 
   async getAllItems(): Promise<ItemData[]> {
-    const results: ItemData[] = [];
-    for (const item of this.items.values()) {
-      if (item.binaryKeys?.length) {
-        const binaryData: Record<string, ArrayBuffer> = {};
-        for (const key of item.binaryKeys) {
-          const p = this.binPath(item.id, key);
-          if (await exists(p)) {
-            const bytes = await readFile(p);
-            binaryData[key] = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-          }
-        }
-        results.push({ ...item, binaryData });
-      } else {
-        results.push({ ...item });
-      }
-    }
-    return results;
+    return this.materializeItems(this.items.values());
+  }
+
+  async getItemsForTab(tabId: number): Promise<ItemData[]> {
+    return this.materializeItems(
+      [...this.items.values()].filter(item => item.tabId === tabId)
+    );
   }
 
   // ── StorageAdapter — Tabs ─────────────────────────────────────────────
@@ -206,6 +216,10 @@ export class FsAdapter implements StorageAdapter {
 
   async getAllEdges(): Promise<EdgeData[]> {
     return [...this.edges.values()];
+  }
+
+  async getEdgesForTab(tabId: number): Promise<EdgeData[]> {
+    return [...this.edges.values()].filter(edge => edge.tabId === tabId);
   }
 
   // ── StorageAdapter — Viewport & active tab ────────────────────────────

@@ -32,9 +32,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   ctx.scale = vp?.scale ?? 1;
   applyTransform(ctx);
 
-  const allItems = await ctx.adapter.getAllItems();
-  const tabItems = allItems
-    .filter(s => s.tabId === tabId)
+  const tabItems = (await ctx.adapter.getItemsForTab(tabId))
     .sort((a, b) => a.zIndex - b.zIndex);
 
   for (const saved of tabItems) {
@@ -61,7 +59,7 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   }
 
   // Load edges
-  const savedEdges = (await ctx.adapter.getAllEdges()).filter(e => e.tabId === tabId);
+  const savedEdges = await ctx.adapter.getEdgesForTab(tabId);
   if (savedEdges.length) ctx.edgeCounter = Math.max(ctx.edgeCounter, ...savedEdges.map(e => e.id));
   for (const saved of savedEdges) {
     const fromRec = ctx.itemsById.get(saved.fromNode);
@@ -136,7 +134,7 @@ export function renderTabBar(ctx: Ctx): void {
       e.stopPropagation();
       const items = tab.id === ctx.currentTabId
         ? ctx.items
-        : (await ctx.adapter.getAllItems()).filter(i => i.tabId === tab.id);
+        : await ctx.adapter.getItemsForTab(tab.id);
       const labelCounts = new Map<string, number>();
       for (const i of items) {
         const label = ctx.itemPlugins.get(i.type)?.label ?? i.type;
@@ -189,15 +187,11 @@ export async function deleteTab(ctx: Ctx, tabId: number): Promise<void> {
   const idx = ctx.tabs.findIndex(t => t.id === tabId);
   const nextTab = ctx.tabs[idx + 1] ?? ctx.tabs[idx - 1];
   if (tabId === ctx.currentTabId) await switchTab(ctx, nextTab.id);
-  const allItems = await ctx.adapter.getAllItems();
-  for (const item of allItems) {
-    if (item.tabId === tabId) ctx.adapter.deleteItem(item.id);
-  }
+  const tabItems = await ctx.adapter.getItemsForTab(tabId);
+  for (const item of tabItems) ctx.adapter.deleteItem(item.id);
   // edges for this tab
-  const allEdges = await ctx.adapter.getAllEdges();
-  for (const edge of allEdges) {
-    if (edge.tabId === tabId) ctx.adapter.deleteEdge(edge.id);
-  }
+  const tabEdges = await ctx.adapter.getEdgesForTab(tabId);
+  for (const edge of tabEdges) ctx.adapter.deleteEdge(edge.id);
   ctx.adapter.deleteTab(tabId);
   ctx.adapter.deleteViewport(tabId);
   const oldHistory = ctx.tabHistory.get(tabId);

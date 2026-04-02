@@ -105,16 +105,15 @@ interface PcvsPayload {
 // ── Export ────────────────────────────────────────────────────────────────────
 
 export async function exportCanvas(adapter: StorageAdapter, tabId?: number): Promise<Blob> {
-  const [allTabs, allItems, allEdges] = await Promise.all([
-    adapter.getAllTabs(),
-    adapter.getAllItems(),
-    adapter.getAllEdges(),
-  ]);
+  const allTabs = await adapter.getAllTabs();
+  const tabs    = tabId !== undefined ? allTabs.filter(t => t.id === tabId) : allTabs;
 
-  const tabs  = tabId !== undefined ? allTabs.filter(t => t.id === tabId) : allTabs;
-  const tabIds = new Set(tabs.map(t => t.id));
-  const items = allItems.filter(i => tabIds.has(i.tabId));
-  const edges = allEdges.filter(e => tabIds.has(e.tabId));
+  const [itemLists, edgeLists] = await Promise.all([
+    Promise.all(tabs.map(t => adapter.getItemsForTab(t.id))),
+    Promise.all(tabs.map(t => adapter.getEdgesForTab(t.id))),
+  ]);
+  const items = itemLists.flat();
+  const edges = edgeLists.flat();
 
   const viewports: Record<string, ViewportState> = {};
   await Promise.all(tabs.map(async t => {

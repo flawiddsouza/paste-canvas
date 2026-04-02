@@ -10,6 +10,9 @@ export class MemoryAdapter implements StorageAdapter {
   async putItem(item: ItemData): Promise<void>         { this.items.set(item.id, item); }
   async deleteItem(id: number): Promise<void>          { this.items.delete(id); }
   async getAllItems(): Promise<ItemData[]>              { return [...this.items.values()]; }
+  async getItemsForTab(tabId: number): Promise<ItemData[]> {
+    return [...this.items.values()].filter(item => item.tabId === tabId);
+  }
 
   async putTab(tab: TabData): Promise<void>            { this.tabs.set(tab.id, tab); }
   async deleteTab(id: number): Promise<void>           { this.tabs.delete(id); }
@@ -18,6 +21,9 @@ export class MemoryAdapter implements StorageAdapter {
   async putEdge(edge: EdgeData): Promise<void>         { this.edges.set(edge.id, edge); }
   async deleteEdge(id: number): Promise<void>          { this.edges.delete(id); }
   async getAllEdges(): Promise<EdgeData[]>              { return [...this.edges.values()]; }
+  async getEdgesForTab(tabId: number): Promise<EdgeData[]> {
+    return [...this.edges.values()].filter(edge => edge.tabId === tabId);
+  }
 
   async saveViewport(tabId: number, state: ViewportState): Promise<void> { this.viewports.set(tabId, state); }
   async loadViewport(tabId: number): Promise<ViewportState | null>       { return this.viewports.get(tabId) ?? null; }
