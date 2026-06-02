@@ -434,6 +434,71 @@ export function createItem(
         rh.addEventListener('pointerup',     onUp);
         rh.addEventListener('pointercancel', onUp);
       });
+
+      // dblclick: reset size — image → natural dimensions, note → grow to fit text
+      rh.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        const rec = ctx.itemsById.get(id); if (!rec) return;
+        const startW = el.offsetWidth, startH = el.offsetHeight;
+
+        // Compute target size by item type
+        let targetW = startW, targetH = startH;
+        if (type === 'img') {
+          const img = el.querySelector('img');
+          if (img && img.naturalWidth) targetW = img.naturalWidth; // height follows aspect ratio
+        } else if (type === 'note') {
+          const textarea = el.querySelector('textarea');
+          // Grow to reveal text scrolled out of view (textarea is fixed-rows + overflow:auto)
+          if (textarea) targetH = startH + Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+        }
+        // other types: target stays at current size — double-click is a no-op for them
+        targetW = Math.max(minW, targetW);
+        targetH = Math.max(minH, targetH);
+
+        const groupSnap = captureGroupSnap(ctx, rec);
+
+        // Apply (respecting the plugin's resize axis)
+        if (resizeMode !== 'height') el.style.width  = targetW + 'px';
+        if (resizeMode !== 'width')  el.style.height = targetH + 'px';
+        rec.w = el.offsetWidth; rec.h = el.offsetHeight;
+        bound.onResize?.(rec.w, rec.h);
+        expandGroupToFit(ctx, rec);
+        updateEdgesForItems(ctx, new Set([rec]));
+
+        const endW = el.offsetWidth, endH = el.offsetHeight;
+        if (endW === startW && endH === startH) return; // already at target — nothing to do
+        void saveItem(ctx, id);
+        if (groupSnap) {
+          const g = ctx.itemsById.get(groupSnap.id);
+          if (g && (g.w !== groupSnap.w || g.h !== groupSnap.h)) void saveItem(ctx, g.id);
+        }
+        const groupEnd = groupSnap ? captureGroupSize(ctx, groupSnap.id) : null;
+        pushUndo(ctx, {
+          label: 'resize',
+          undo() {
+            const r = ctx.itemsById.get(id); if (!r) return [];
+            if (resizeMode !== 'height') r.el.style.width  = startW + 'px';
+            if (resizeMode !== 'width')  r.el.style.height = startH + 'px';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
+            r.bound.onResize?.(r.w, r.h);
+            void saveItem(ctx, id);
+            if (groupSnap) applyGroupSize(ctx, groupSnap.id, groupSnap.w, groupSnap.h);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [id];
+          },
+          redo() {
+            const r = ctx.itemsById.get(id); if (!r) return [];
+            if (resizeMode !== 'height') r.el.style.width  = endW + 'px';
+            if (resizeMode !== 'width')  r.el.style.height = endH + 'px';
+            r.w = r.el.offsetWidth; r.h = r.el.offsetHeight;
+            r.bound.onResize?.(r.w, r.h);
+            void saveItem(ctx, id);
+            if (groupSnap && groupEnd) applyGroupSize(ctx, groupSnap.id, groupEnd.w, groupEnd.h);
+            updateEdgesForItems(ctx, new Set([r]));
+            return [id];
+          },
+        });
+      });
     }
   }
 

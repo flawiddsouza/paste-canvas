@@ -144,7 +144,7 @@ export class PasteCanvas {
                 <tr><td>Ctrl+C</td><td>Copy selected item</td></tr>
                 <tr><td>Arrow keys</td><td>Nudge 1px</td></tr>
                 <tr><td>Shift+Arrow keys</td><td>Nudge 10px</td></tr>
-                <tr><td>Double-click resize handle</td><td>Reset size</td></tr>
+                <tr><td>Double-click resize handle</td><td>Auto-fit / reset size</td></tr>
                 <tr><th colspan="2">View</th></tr>
                 <tr><td>F</td><td>Fit selection or all items</td></tr>
                 <tr><th colspan="2">History</th></tr>
