@@ -1,5 +1,6 @@
 import type { ItemPlugin, PluginAPI } from '../plugin.js';
 import { PastePriority } from '../plugin.js';
+import { isEditableTarget } from '../dom.js';
 
 const PC_MIME_META = 'web application/x-paste-canvas';
 
@@ -110,7 +111,7 @@ export const NotePlugin: ItemPlugin<NoteView, NoteSnap> = {
     // Color keyboard shortcuts — only when item is selected
     document.addEventListener('keydown', (e) => {
       if (!api.isSelected()) return;
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (isEditableTarget(e.target)) return;
       const hex = COLOR_HEX[e.key];
       if (!hex) return;
       const newColor = activeSwatchKey(view.color) === e.key ? undefined : hex;

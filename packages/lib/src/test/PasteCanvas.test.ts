@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CanvasAPI, CanvasPlugin } from '../canvas-plugin.js';
-import type { Ctx, EdgeData, ItemData, StorageAdapter, TabData, ViewportState } from '../types.js';
+import type { Ctx, EdgeData, ItemData, ItemRecord, StorageAdapter, TabData, ViewportState } from '../types.js';
 
 vi.mock('../style.js', () => ({
   injectStyles: vi.fn(),
@@ -67,6 +67,8 @@ vi.mock('../context-menu.js', () => ({
 
 import { PasteCanvas } from '../PasteCanvas.js';
 import { renderTabBar } from '../tabs.js';
+import { saveItem } from '../items.js';
+import type { ItemPlugin } from '../plugin.js';
 
 function makeAdapter(overrides?: Partial<StorageAdapter>): StorageAdapter {
   return {
@@ -155,5 +157,88 @@ describe('PasteCanvas refreshTabs', () => {
     expect(ctx.itemCounter).toBe(9);
     expect(ctx.zCounter).toBe(20);
     expect(ctx.edgeCounter).toBe(8);
+  });
+});
+
+describe('PasteCanvas keyboard guard', () => {
+  it('ignores viewport shortcuts while typing in a contentEditable field (e.g. tab title)', async () => {
+    let api!: CanvasAPI;
+    const onMount = vi.fn((canvasApi: CanvasAPI) => { api = canvasApi; });
+    const plugin: CanvasPlugin = { kind: 'canvas', onMount };
+
+    const container = document.createElement('div');
+    const canvas = new PasteCanvas(container, makeAdapter(), { plugins: [plugin] }).mount();
+    await vi.waitFor(() => expect(onMount).toHaveBeenCalledOnce());
+
+    const ctx = (canvas as unknown as { ctx: Ctx }).ctx;
+
+    // A selected item sitting in the viewport.
+    const item = {
+      id: 1, type: 'note', x: 0, y: 0, w: 10, h: 10,
+      el: document.createElement('div'), bound: {}, mounted: true,
+    } as unknown as ItemRecord;
+    ctx.selectedItems.add(item);
+    vi.mocked(saveItem).mockClear();
+
+    // Focus a contentEditable span, like the tab-title editor.
+    const editable = document.createElement('span');
+    editable.contentEditable = 'true';
+    document.body.appendChild(editable);
+    editable.focus();
+
+    try {
+      // Arrow keys inside the editable must NOT nudge the selected item.
+      // The guard is a single early-return, so this also covers Backspace/Delete/etc.
+      editable.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowRight', bubbles: true, cancelable: true,
+      }));
+
+      expect(item.x).toBe(0);
+      expect(vi.mocked(saveItem)).not.toHaveBeenCalled();
+    } finally {
+      editable.remove();
+      ctx.selectedItems.delete(item);
+    }
+  });
+});
+
+describe('PasteCanvas paste guard', () => {
+  it('does not run canvas paste when pasting into an editable field (input / contentEditable)', async () => {
+    const pasteFn = vi.fn().mockResolvedValue(null);
+    const itemPlugin = {
+      kind: 'item', type: 'fake', label: 'Fake',
+      create: () => ({ el: document.createElement('div') }),
+      snapshot: () => ({}),
+      restore: () => {},
+      serialize: () => ({}),
+      hydrate: () => {},
+      paste: pasteFn,
+    } as unknown as ItemPlugin;
+
+    const onMount = vi.fn();
+    const canvasPlugin: CanvasPlugin = { kind: 'canvas', onMount };
+
+    const container = document.createElement('div');
+    new PasteCanvas(container, makeAdapter(), { plugins: [canvasPlugin, itemPlugin] }).mount();
+    await vi.waitFor(() => expect(onMount).toHaveBeenCalledOnce());
+
+    const editable = document.createElement('span');
+    editable.contentEditable = 'plaintext-only';
+    const input = document.createElement('input');
+    document.body.append(editable, input);
+
+    try {
+      // Pasting into editable targets must NOT trigger plugin paste / item creation.
+      editable.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true }));
+      input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true }));
+      expect(pasteFn).not.toHaveBeenCalled();
+
+      // Control: pasting onto a non-editable target still runs plugin paste.
+      document.body.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true }));
+      expect(pasteFn).toHaveBeenCalled();
+    } finally {
+      editable.remove();
+      input.remove();
+    }
   });
 });

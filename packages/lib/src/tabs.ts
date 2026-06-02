@@ -96,7 +96,7 @@ export function renderTabBar(ctx: Ctx): void {
 
     nameSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      nameSpan.contentEditable = 'true';
+      nameSpan.contentEditable = 'plaintext-only';
       nameSpan.spellcheck = false;
       nameSpan.focus();
       const range = document.createRange();
@@ -120,7 +120,7 @@ export function renderTabBar(ctx: Ctx): void {
     });
 
     tabEl.addEventListener('click', () => {
-      if (nameSpan.contentEditable === 'true') return;
+      if (nameSpan.isContentEditable) return;
       void switchTab(ctx, tab.id);
     });
     tabEl.appendChild(nameSpan);

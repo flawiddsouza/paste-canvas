@@ -13,6 +13,7 @@ import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
 import { renderTabBar, restoreAll, createTab } from './tabs.js';
 import { initContextMenu } from './context-menu.js';
+import { isEditableTarget } from './dom.js';
 
 function renderToolbarItem(item: ToolbarItem, signal: AbortSignal): HTMLElement {
   if (item.kind === 'separator') {
@@ -365,7 +366,7 @@ export class PasteCanvas {
     document.addEventListener('keydown', () => { middleJustReleased = false; }, { signal: ctx.signal });
     document.addEventListener('paste', (e) => {
       if (middleJustReleased) { middleJustReleased = false; e.preventDefault(); return; } // suppress middle-click primary-selection paste (Linux X11)
-      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      if (isEditableTarget(e.target)) return;
       const dt = e.clipboardData!;
 
       // Each plugin's paste() grabs its DataTransfer data synchronously before its first
@@ -415,7 +416,7 @@ export class PasteCanvas {
   private setupKeyboard(container: HTMLElement): void {
     const ctx = this.ctx;
     document.addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') return;
+      if (isEditableTarget(e.target)) return;
       if (e.ctrlKey && e.key === 'z') { e.preventDefault(); performUndo(ctx); return; }
       if (e.ctrlKey && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); performRedo(ctx); return; }
       if (e.ctrlKey && e.key === 'a') {
