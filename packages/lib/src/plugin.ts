@@ -32,6 +32,8 @@ export interface PluginAPI {
 
   /** Is this item currently in the selection set? */
   isSelected(): boolean;
+  /** Remove this item from the selection (e.g. when its label gains focus for editing). */
+  deselect(): void;
 
   pushUndo(cmd: UndoCmd): void;
   save():          void;                 // immediate persist; plugins debounce themselves
@@ -114,9 +116,10 @@ export interface ItemPlugin<
   } | null>;
 
   /**
-   * Return extra toolbar buttons to insert before the core-owned buttons
-   * (ungroup + delete). Called once after create(). api is passed explicitly
-   * because this is a singleton method (same reason as copy).
+   * Return extra toolbar buttons to insert before the core-owned Delete button.
+   * Only used for non-container items — groups have no floating toolbar (their
+   * actions live in the right-click menu). Called once after create(); api is
+   * passed explicitly because this is a singleton method (same reason as copy).
    */
   toolbarButtons?(view: TView, api: PluginAPI): HTMLElement[];
 
@@ -245,6 +248,13 @@ export function makePluginAPI(
     get scale() { return ctx.scale; },
 
     isSelected()  { const rec = ctx.itemsById.get(id); return rec ? ctx.selectedItems.has(rec) : false; },
+    deselect() {
+      const rec = ctx.itemsById.get(id);
+      if (rec && ctx.selectedItems.delete(rec)) {
+        rec.el.classList.remove('selected');
+        rec.bound.onSelectionChange?.(false);
+      }
+    },
     pushUndo(cmd) { if (!suppressed) pushUndo(ctx, cmd); },
     save() {
       if (!suppressed) {

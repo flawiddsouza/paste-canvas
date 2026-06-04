@@ -176,86 +176,41 @@ export function createItem(
   const minW        = plugin?.minWidth  ?? (isContainer ? 120 : 80);
   const minH        = plugin?.minHeight ?? (isContainer ? 80  : 40);
 
-  // ── Toolbar ──────────────────────────────────────────────────────────────────
-  const itb = document.createElement('div');
-  itb.className = 'item-toolbar';
-  itb.addEventListener('pointerdown', (e) => { if (e.button !== 1) e.stopPropagation(); });
+  // ── Toolbar (non-container items only; groups use the right-click menu) ────────
+  if (!isContainer) {
+    const itb = document.createElement('div');
+    itb.className = 'item-toolbar';
+    itb.addEventListener('pointerdown', (e) => { if (e.button !== 1) e.stopPropagation(); });
 
-  const pluginBtns = bound.toolbarButtons?.() ?? [];
-  for (const btn of pluginBtns) itb.appendChild(btn);
+    const pluginBtns = bound.toolbarButtons?.() ?? [];
+    for (const btn of pluginBtns) itb.appendChild(btn);
 
-  if (isContainer) {
-    const ungroupBtn = document.createElement('button');
-    ungroupBtn.className   = 'item-btn';
-    ungroupBtn.textContent = 'Ungroup';
-    ungroupBtn.addEventListener('click', (e) => {
+    const delBtn = document.createElement('button');
+    delBtn.className   = 'item-btn danger';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const rec       = ctx.itemsById.get(id)!;
-      const memberIds = ctx.items.filter(i => i.groupId === id).map(i => i.id);
-      const groupSnap = snapItem(ctx, rec);
-      for (const mid of memberIds) {
-        const m = ctx.itemsById.get(mid);
-        if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
-      }
+      const snap      = snapItem(ctx, rec);
+      const edgeSnaps = [...(ctx.nodeEdgeMap.get(id) ?? [])].map(snapEdge);
       removeItem(ctx, rec);
       pushUndo(ctx, {
-        label: 'ungroup',
+        label: `delete ${plugin?.label.toLowerCase() ?? type}`,
         undo() {
-          restoreItemSnap(ctx, groupSnap);
-          for (const mid of memberIds) {
-            const m = ctx.itemsById.get(mid);
-            if (m) { m.groupId = groupSnap.id; void saveItem(ctx, m.id); }
-          }
-          return [groupSnap.id, ...memberIds];
+          restoreItemSnap(ctx, snap);
+          for (const es of edgeSnaps) restoreEdgeSnap(ctx, es);
+          return [snap.id];
         },
         redo() {
-          for (const mid of memberIds) {
-            const m = ctx.itemsById.get(mid);
-            if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
-          }
-          const g = ctx.itemsById.get(groupSnap.id);
-          if (g) removeItem(ctx, g);
-          return memberIds;
+          const r = ctx.itemsById.get(snap.id);
+          if (r) removeItem(ctx, r);
+          return [];
         },
       });
     });
-    itb.appendChild(ungroupBtn);
+    itb.appendChild(delBtn);
+    el.appendChild(itb);
   }
-
-  const delBtn = document.createElement('button');
-  delBtn.className   = 'item-btn danger';
-  delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const rec       = ctx.itemsById.get(id)!;
-    const snap      = snapItem(ctx, rec);
-    const memberIds = isContainer
-      ? ctx.items.filter(i => i.groupId === id).map(i => i.id)
-      : [];
-    const edgeSnaps = isContainer
-      ? []
-      : [...(ctx.nodeEdgeMap.get(id) ?? [])].map(snapEdge);
-    removeItem(ctx, rec);
-    pushUndo(ctx, {
-      label: `delete ${plugin?.label.toLowerCase() ?? type}`,
-      undo() {
-        restoreItemSnap(ctx, snap);
-        for (const mid of memberIds) {
-          const m = ctx.itemsById.get(mid);
-          if (m) { m.groupId = snap.id; void saveItem(ctx, m.id); }
-        }
-        for (const es of edgeSnaps) restoreEdgeSnap(ctx, es);
-        return [snap.id, ...memberIds];
-      },
-      redo() {
-        const r = ctx.itemsById.get(snap.id);
-        if (r) removeItem(ctx, r);
-        return [];
-      },
-    });
-  });
-  itb.appendChild(delBtn);
-  el.appendChild(itb);
 
   // ── Content shell ─────────────────────────────────────────────────────────────
   if (isContainer) {
@@ -609,7 +564,6 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     dragging = true;
     el.setPointerCapture(e.pointerId);
     document.body.classList.add('paste-canvas-dragging');
-    for (const r of ctx.items) r.el.classList.remove('toolbar-active');
 
     const vr = ctx.viewport.getBoundingClientRect();
     startCanvasX = (e.clientX - vr.left - ctx.panX) / ctx.scale;

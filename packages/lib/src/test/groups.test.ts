@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Ctx, ItemRecord } from '../types.js';
 
-vi.mock('../items.js', () => ({ saveItem: vi.fn(), createItem: vi.fn(), removeItem: vi.fn() }));
+vi.mock('../items.js', () => ({ saveItem: vi.fn(), createItem: vi.fn(), removeItem: vi.fn(), snapItem: vi.fn(), restoreItemSnap: vi.fn() }));
 vi.mock('../history.js', () => ({ pushUndo: vi.fn() }));
 vi.mock('../canvas.js', () => ({ toast: vi.fn(), selectItem: vi.fn() }));
 
-import { expandGroupToContain, resolveDropGroup, reparentItems, groupAutoFitBounds, clampMemberInsideGroup } from '../groups.js';
-import { saveItem } from '../items.js';
+import { expandGroupToContain, resolveDropGroup, reparentItems, groupAutoFitBounds, clampMemberInsideGroup, ungroupContainer } from '../groups.js';
+import { saveItem, removeItem } from '../items.js';
 
 function rec(
   id: number, type: string,
@@ -36,13 +36,12 @@ describe('expandGroupToContain', () => {
     expect(g.el.style.height).toBe((424 - 100) + 'px');
   });
 
-  it('leaves extra top padding (room for the label) when growing upward', () => {
+  it('grows upward with the same pad as the sides', () => {
     const g = rec(1, 'group', 100, 100, 200, 200, 1);
     const m = rec(2, 'note', 120, 40, 50, 50, 2); // above the group top
     expandGroupToContain(g, m);
-    // The label is anchored to the group's top edge, so the top grows with a
-    // larger pad than the sides, leaving a gap between the label and contents.
-    expect(40 - g.y).toBeGreaterThan(24);
+    // The label is a title above the box now, so the top uses the same 24px pad.
+    expect(40 - g.y).toBe(24);
   });
 
   it('does nothing when the member already fits inside', () => {
@@ -55,15 +54,14 @@ describe('expandGroupToContain', () => {
 });
 
 describe('groupAutoFitBounds', () => {
-  it('wraps members with side pad and extra top pad for the label', () => {
+  it('wraps members with the same pad on every side', () => {
     const a = rec(1, 'note', 100, 100, 50, 50, 1);
     const b = rec(2, 'note', 200, 180, 60, 40, 2); // bottom-right extent: 260, 220
     const bounds = groupAutoFitBounds([a, b])!;
-    expect(bounds.x).toBe(100 - 24);             // left: minX - side pad
-    expect(bounds.x + bounds.w).toBe(260 + 24);  // right: maxX + side pad
-    expect(bounds.y + bounds.h).toBe(220 + 24);  // bottom: maxY + side pad
-    // Top leaves more room than the sides so the label clears the contents.
-    expect(100 - bounds.y).toBeGreaterThan(24);
+    expect(bounds.x).toBe(100 - 24);             // left: minX - pad
+    expect(bounds.x + bounds.w).toBe(260 + 24);  // right: maxX + pad
+    expect(bounds.y + bounds.h).toBe(220 + 24);  // bottom: maxY + pad
+    expect(bounds.y).toBe(100 - 24);             // top: minY - pad (same as sides)
   });
 
   it('returns null when there are no members', () => {
@@ -72,12 +70,12 @@ describe('groupAutoFitBounds', () => {
 });
 
 describe('clampMemberInsideGroup', () => {
-  it('reserves the top gap for the label so a member cannot slide under it', () => {
+  it('clamps a member to the top edge of the group', () => {
     const g = rec(1, 'group', 0, 0, 400, 400, 1);
     // Drag a member up past the group's top edge.
     const { y } = clampMemberInsideGroup(g, 50, -100, 50, 50);
-    // Clamped below the reserved label gap, not flush to the raw top edge (0).
-    expect(y).toBeGreaterThan(0);
+    // The label is a title above the box, so members clamp flush to the top edge.
+    expect(y).toBe(0);
   });
 
   it('clamps to the left, right and bottom edges', () => {
@@ -211,5 +209,21 @@ describe('reparentItems — nesting a group', () => {
     expect(a.el.style.zIndex).toBe('9');        // unchanged
     expect(m.el.style.zIndex).toBe('10');       // unchanged
     expect(data.itemsBefore.has(3)).toBe(false); // member not touched
+  });
+});
+
+describe('ungroupContainer', () => {
+  it('detaches all members and removes the group', () => {
+    const g  = rec(1, 'group', 0, 0, 400, 400, 1);
+    const m1 = rec(2, 'note', 50, 50, 50, 50, 2, 1);   // member of g
+    const m2 = rec(3, 'note', 120, 120, 50, 50, 3, 1); // member of g
+    const ctx = makeCtx([g, m1, m2]);
+    vi.mocked(removeItem).mockClear();
+
+    ungroupContainer(ctx, g);
+
+    expect(m1.groupId).toBeUndefined();
+    expect(m2.groupId).toBeUndefined();
+    expect(vi.mocked(removeItem)).toHaveBeenCalledWith(ctx, g);
   });
 });

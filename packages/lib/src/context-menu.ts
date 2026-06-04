@@ -1,6 +1,7 @@
 import type { Ctx, ItemRecord, EdgeRecord } from './types.js';
 import { saveItem, createItem, snapItem, restoreItemSnap, removeItem } from './items.js';
 import { clearSelection, selectItem } from './canvas.js';
+import { ungroupContainer } from './groups.js';
 import { pushUndo } from './history.js';
 
 // ── Target detection ─────────────────────────────────────────────────────────
@@ -133,6 +134,11 @@ export function initContextMenu(
       if (!ctx.selectedItems.has(clicked)) selectItem(ctx, clicked);
       const targets  = [...ctx.selectedItems];
       const hasItems = targets.some(i => !ctx.itemPlugins.get(i.type)?.container);
+
+      if (ctx.itemPlugins.get(clicked.type)?.container) {
+        addEntry('Ungroup', false, () => ungroupContainer(ctx, clicked));
+        addSep();
+      }
 
       if (hasItems) {
         addEntry('Bring to Front', false, () => bringToFront(ctx, targets));

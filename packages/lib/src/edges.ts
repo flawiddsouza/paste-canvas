@@ -345,7 +345,6 @@ export function findDropTarget(
 export function startEdgeDrag(ctx: Ctx, fromRecord: ItemRecord, fromSide: Side, e: PointerEvent): void {
   clearSelection(ctx);
   ctx.draggingEdge = true;
-  for (const r of ctx.items) r.el.classList.remove('toolbar-active');
   const pid = e.pointerId;
   const preview = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   preview.setAttribute('class', 'edge-preview');

@@ -269,10 +269,17 @@ export const css = `
     pointer-events: none;
     transition: opacity 0.1s ease;
   }
-  .paste-canvas-root .item.toolbar-active .item-toolbar {
+  /* The toolbar shows for the selected item — selection is set by a click and
+     doesn't change as the pointer moves, so the toolbar never flickers, runs
+     away, or stacks with another item's. */
+  .paste-canvas-root .item.selected .item-toolbar {
     opacity: 1;
     pointer-events: auto;
-    transition: opacity 0.15s ease 0.35s;
+  }
+  /* Keep toolbars out of the way while dragging. */
+  body.paste-canvas-dragging .item-toolbar {
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   .paste-canvas-root .item-btn {
@@ -491,11 +498,14 @@ export const css = `
     background: rgba(45, 107, 224, 0.12);
   }
 
+  /* The label is a title that sits ABOVE the group box (like a frame name), so
+     it no longer competes with member toolbars for the box's top strip. */
   .paste-canvas-root .group-label {
     position: absolute;
-    top: 6px;
-    left: 8px;
-    right: 24px;
+    left: 2px;
+    right: 2px;
+    bottom: 100%;
+    margin-bottom: 3px;
     background: transparent;
     border: none;
     outline: none;

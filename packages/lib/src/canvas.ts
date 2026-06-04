@@ -292,32 +292,8 @@ export function initViewport(ctx: Ctx): void {
   }, { passive: false, signal });
 }
 
-// ── Toolbar hover hit-test ──────────────────────────────────────────────────
-
-export function initToolbarHover(ctx: Ctx): void {
-  const { signal } = ctx;
-  ctx.viewport.addEventListener('pointermove', (e) => {
-    if (ctx.draggingEdge || document.body.classList.contains('paste-canvas-dragging')) return;
-    const vr = ctx.viewport.getBoundingClientRect();
-    const cx = (e.clientX - vr.left - ctx.panX) / ctx.scale;
-    const cy = (e.clientY - vr.top  - ctx.panY) / ctx.scale;
-    for (const record of ctx.items) {
-      if (!record.mounted) {
-        record.el.classList.remove('toolbar-active');
-        continue;
-      }
-      const w = record.w || record.el.offsetWidth;
-      const h = record.h || record.el.offsetHeight;
-      const inZone = (cx >= record.x && cx <= record.x + w &&
-                      cy >= record.y - 36 / ctx.scale && cy <= record.y + h)
-                  || record.el.contains(e.target as Node);
-      record.el.classList.toggle('toolbar-active', inZone);
-    }
-  }, { signal });
-  ctx.viewport.addEventListener('pointerleave', () => {
-    for (const record of ctx.items) record.el.classList.remove('toolbar-active');
-  }, { signal });
-}
+// The item toolbar shows for the selected item (the `.selected` class in
+// style.ts), so there is no hover hit-test to wire up.
 
 const OVERVIEW_SCALE        = 0.25;
 const LOD_SCALE             = 0.5;

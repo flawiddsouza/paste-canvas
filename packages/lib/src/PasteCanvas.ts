@@ -3,7 +3,7 @@ import type { ItemPlugin, StoredPlugin } from './plugin.js';
 import type { CanvasPlugin, CanvasAPI, ToolbarItem } from './canvas-plugin.js';
 import { PastePriority } from './plugin.js';
 import { injectStyles } from './style.js';
-import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, initToolbarHover, invalidateOverviewCache } from './canvas.js';
+import { applyTransform, saveViewport, toast, viewportCenter, fitItems, clearSelection, addToSelection, initViewport, invalidateOverviewCache } from './canvas.js';
 import { pushUndo, performUndo, performRedo } from './history.js';
 import { snapItem, restoreItemSnap, saveItem, createItem, removeItem, duplicateSelected } from './items.js';
 import { NotePlugin } from './plugins/NotePlugin.js';
@@ -272,7 +272,6 @@ export class PasteCanvas {
   private setupInteraction(container: HTMLElement): void {
     const ctx = this.ctx;
     initViewport(ctx);
-    initToolbarHover(ctx);
     this.setupToolbarButtons(container);
     const api = this.makeCanvasAPI();
     const toolbar = container.querySelector<HTMLDivElement>('.pc-toolbar')!;

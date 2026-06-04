@@ -9,6 +9,7 @@ function makeApi(itemEl: HTMLElement): PluginAPI {
     signal: new AbortController().signal,
     scale: 1,
     isSelected: () => true,
+    deselect: () => {},
     pushUndo: () => {},
     save: () => {},
     notifyResized: () => {},

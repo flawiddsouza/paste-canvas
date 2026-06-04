@@ -17,7 +17,6 @@ vi.mock('../canvas.js', () => ({
   addToSelection: vi.fn(),
   selectItem: vi.fn(),
   initViewport: vi.fn(),
-  initToolbarHover: vi.fn(),
   invalidateOverviewCache: vi.fn(),
   refreshOverview: vi.fn(),
   updateCulling: vi.fn(),

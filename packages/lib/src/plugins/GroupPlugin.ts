@@ -26,6 +26,15 @@ export const GroupPlugin: ItemPlugin<GroupView, GroupSnap> = {
     labelEl.spellcheck  = false;
     el.append(labelEl);
 
+    // Editing the title should not fight the group's selection toolbar: clicking
+    // (or tabbing) into the label deselects the group so the toolbar clears out
+    // of the way. pointerdown covers re-clicking a label that already holds focus
+    // (the group can be re-selected without the label ever blurring, so `focus`
+    // alone wouldn't fire again).
+    const dropGroupSelection = () => api.deselect();
+    labelEl.addEventListener('pointerdown', dropGroupSelection, { signal: api.signal });
+    labelEl.addEventListener('focus',       dropGroupSelection, { signal: api.signal });
+
     let t: ReturnType<typeof setTimeout> | null = null;
     labelEl.addEventListener('input', () => {
       clearTimeout(t ?? undefined);

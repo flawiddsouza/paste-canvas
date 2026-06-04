@@ -1,12 +1,9 @@
 import type { Ctx, ItemRecord } from './types.js';
-import { createItem, removeItem, saveItem } from './items.js';
+import { createItem, removeItem, saveItem, snapItem, restoreItemSnap } from './items.js';
 import { pushUndo } from './history.js';
 import { toast, selectItem } from './canvas.js';
 
 const GROUP_PAD = 24;
-// The label sits at the group's top edge, so the top needs more room than the
-// sides to keep a little space between the label and the contents below it.
-const GROUP_PAD_TOP = 40;
 
 /** Grow `group` on any side needed so it contains `member` plus GROUP_PAD. */
 export function expandGroupToContain(group: ItemRecord, member: ItemRecord): void {
@@ -15,7 +12,7 @@ export function expandGroupToContain(group: ItemRecord, member: ItemRecord): voi
   let gx = group.x, gy = group.y;
   let gRight = group.x + group.w, gBottom = group.y + group.h;
   if (member.x - GROUP_PAD < gx)         gx = member.x - GROUP_PAD;
-  if (member.y - GROUP_PAD_TOP < gy)     gy = member.y - GROUP_PAD_TOP;
+  if (member.y - GROUP_PAD < gy)         gy = member.y - GROUP_PAD;
   if (member.x + mw + GROUP_PAD > gRight)  gRight  = member.x + mw + GROUP_PAD;
   if (member.y + mh + GROUP_PAD > gBottom) gBottom = member.y + mh + GROUP_PAD;
   const nw = gRight - gx, nh = gBottom - gy;
@@ -31,9 +28,8 @@ export function getGroupMembers(ctx: Ctx, groupId: number): ItemRecord[] {
 }
 
 /**
- * Bounds a container group should take to wrap `members` snugly: the usual side
- * pad on left/right/bottom, plus extra top pad so the label clears the contents.
- * Returns null when there are no members.
+ * Bounds a container group should take to wrap `members` snugly, with the usual
+ * pad on every side. Returns null when there are no members.
  */
 export function groupAutoFitBounds(
   members: ItemRecord[],
@@ -48,16 +44,15 @@ export function groupAutoFitBounds(
   }
   return {
     x: minX - GROUP_PAD,
-    y: minY - GROUP_PAD_TOP,
+    y: minY - GROUP_PAD,
     w: maxX - minX + GROUP_PAD * 2,
-    h: maxY - minY + GROUP_PAD_TOP + GROUP_PAD,
+    h: maxY - minY + GROUP_PAD * 2,
   };
 }
 
 /**
- * Clamp a member positioned at (x, y) so it stays inside `group`. The top keeps
- * the GROUP_PAD_TOP gap reserved for the label, so a dragged member can't slide
- * up under it; left, right and bottom clamp to the group's edges.
+ * Clamp a member positioned at (x, y) so it stays inside `group`, flush to any
+ * edge. The label is a title above the box, so the top needs no reserved gap.
  */
 export function clampMemberInsideGroup(
   group: ItemRecord,
@@ -65,7 +60,7 @@ export function clampMemberInsideGroup(
 ): { x: number; y: number } {
   return {
     x: Math.max(group.x, Math.min(group.x + group.w - w, x)),
-    y: Math.max(group.y + GROUP_PAD_TOP, Math.min(group.y + group.h - h, y)),
+    y: Math.max(group.y, Math.min(group.y + group.h - h, y)),
   };
 }
 
@@ -196,6 +191,41 @@ export function reparentItems(
   }
 
   return { changed, itemsBefore, itemsAfter, groupBefore, groupAfter };
+}
+
+/**
+ * Ungroup a container: detach every member (clear its groupId) and remove the
+ * group item itself; members stay where they are. Pushes an undo command.
+ */
+export function ungroupContainer(ctx: Ctx, group: ItemRecord): void {
+  const id = group.id;
+  const memberIds = ctx.items.filter(i => i.groupId === id).map(i => i.id);
+  const groupSnap = snapItem(ctx, group);
+  for (const mid of memberIds) {
+    const m = ctx.itemsById.get(mid);
+    if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
+  }
+  removeItem(ctx, group);
+  pushUndo(ctx, {
+    label: 'ungroup',
+    undo() {
+      restoreItemSnap(ctx, groupSnap);
+      for (const mid of memberIds) {
+        const m = ctx.itemsById.get(mid);
+        if (m) { m.groupId = groupSnap.id; void saveItem(ctx, m.id); }
+      }
+      return [groupSnap.id, ...memberIds];
+    },
+    redo() {
+      for (const mid of memberIds) {
+        const m = ctx.itemsById.get(mid);
+        if (m) { m.groupId = undefined; void saveItem(ctx, m.id); }
+      }
+      const g = ctx.itemsById.get(groupSnap.id);
+      if (g) removeItem(ctx, g);
+      return memberIds;
+    },
+  });
 }
 
 export function groupSelectedItems(ctx: Ctx): void {
