@@ -385,12 +385,13 @@ export const css = `
     image-rendering: pixelated;
   }
 
-  /* ── LOD: strip decorations when zoomed out below 35% ── */
+  /* ── LOD: strip interactive chrome when zoomed out below 50% ──
+     Image & group labels stay visible — they identify what you're looking at,
+     which is exactly why you zoom out. Edge labels stay hidden (they overlap
+     into clutter at low zoom). */
   .paste-canvas-root .pc-surface.overview-lod .item-toolbar,
   .paste-canvas-root .pc-surface.overview-lod .port,
   .paste-canvas-root .pc-surface.overview-lod .resize-handle,
-  .paste-canvas-root .pc-surface.overview-lod .img-label,
-  .paste-canvas-root .pc-surface.overview-lod .group-label,
   .paste-canvas-root .pc-surface.overview-lod .edge-label-text {
     display: none !important;
   }

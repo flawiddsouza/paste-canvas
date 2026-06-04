@@ -321,16 +321,34 @@ export function initToolbarHover(ctx: Ctx): void {
 
 const OVERVIEW_SCALE        = 0.25;
 const LOD_SCALE             = 0.5;
-const OVERVIEW_RENDER_SCALE = 0.1; // render cache at 10% – one-time cost, then CSS transform for pan/zoom
+// Render the overview tile at the zoom where it first appears, so crossing into
+// overview mode stays crisp (~1:1) instead of upscaling a 10%-rendered tile 2.5×.
+// MAX_CACHE_PX still caps the canvas, so the worst-case memory is unchanged and
+// very large boards degrade gracefully. One-time cost; CSS transform handles pan/zoom.
+const OVERVIEW_RENDER_SCALE = OVERVIEW_SCALE;
 
 // Per-canvas cache state (WeakMap so it's GC-safe across destroy/recreate cycles)
 const overviewCache = new WeakMap<HTMLCanvasElement, { minX: number; minY: number; renderScale: number }>();
+
+// Drawn size of an item in the overview tile. Width-resize images carry no rec.h
+// until they've been mounted and measured, so an image loaded straight into overview
+// mode reports h === 0 — derive its height from the decoded aspect ratio instead of
+// falling back to 200, which squashes tall screenshots into short wide strips.
+export function overviewItemSize(item: ItemRecord): { w: number; h: number } {
+  const w = item.w || 200;
+  if (item.h) return { w, h: item.h };
+  if (item.type === 'img') {
+    const img = item.el.querySelector('img');
+    if (img?.naturalWidth) return { w, h: w * img.naturalHeight / img.naturalWidth };
+  }
+  return { w, h: 200 };
+}
 
 function buildOverviewCache(ctx: Ctx): void {
   const canvas = ctx.overviewCanvas;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const item of ctx.items) {
-    const w = item.w || 200, h = item.h || 200;
+    const { w, h } = overviewItemSize(item);
     minX = Math.min(minX, item.x); maxX = Math.max(maxX, item.x + w);
     minY = Math.min(minY, item.y); maxY = Math.max(maxY, item.y + h);
   }
@@ -341,11 +359,13 @@ function buildOverviewCache(ctx: Ctx): void {
   canvas.width  = Math.max(1, Math.ceil((maxX - minX) * fitScale));
   canvas.height = Math.max(1, Math.ceil((maxY - minY) * fitScale));
   const c2d = canvas.getContext('2d')!;
+  c2d.imageSmoothingEnabled = true;
+  c2d.imageSmoothingQuality = 'high'; // keep thin content (form lines, small text) from washing out when downscaled
   c2d.save();
   c2d.scale(fitScale, fitScale);
   c2d.translate(-minX, -minY);
   for (const item of ctx.items) {
-    const iw = item.w || 200, ih = item.h || 200;
+    const { w: iw, h: ih } = overviewItemSize(item);
     const plugin = ctx.itemPlugins.get(item.type);
     if (plugin?.container) {
       c2d.fillStyle = 'rgba(255, 200, 60, 0.07)';
