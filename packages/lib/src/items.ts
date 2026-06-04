@@ -4,7 +4,7 @@ import { makePluginAPI, bindPlugin } from './plugin.js';
 import { pushUndo } from './history.js';
 import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateOverviewCache, toast } from './canvas.js';
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
-import { resolveDropGroup, reparentItems, type ReparentData } from './groups.js';
+import { resolveDropGroup, reparentItems, groupAutoFitBounds, type ReparentData } from './groups.js';
 
 const GROUP_PAD = 24;
 
@@ -333,17 +333,9 @@ export function createItem(
       rh.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         const members = ctx.items.filter(i => i.groupId === id);
-        if (members.length === 0) return;
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const m of members) {
-          const mw = m.w || m.el.offsetWidth || 200;
-          const mh = m.h || m.el.offsetHeight || 200;
-          minX = Math.min(minX, m.x); minY = Math.min(minY, m.y);
-          maxX = Math.max(maxX, m.x + mw); maxY = Math.max(maxY, m.y + mh);
-        }
-        const newX = minX - GROUP_PAD, newY = minY - GROUP_PAD;
-        const newW = maxX - minX + GROUP_PAD * 2;
-        const newH = maxY - minY + GROUP_PAD * 2;
+        const fit = groupAutoFitBounds(members);
+        if (!fit) return;
+        const newX = fit.x, newY = fit.y, newW = fit.w, newH = fit.h;
         const rec = ctx.itemsById.get(id); if (!rec) return;
         const prevX = rec.x, prevY = rec.y, prevW = rec.w, prevH = rec.h;
         if (newX === prevX && newY === prevY && newW === prevW && newH === prevH) return;

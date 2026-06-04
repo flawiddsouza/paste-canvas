@@ -4,6 +4,9 @@ import { pushUndo } from './history.js';
 import { toast, selectItem } from './canvas.js';
 
 const GROUP_PAD = 24;
+// The label sits at the group's top edge, so the top needs more room than the
+// sides to keep a little space between the label and the contents below it.
+const GROUP_PAD_TOP = 40;
 
 /** Grow `group` on any side needed so it contains `member` plus GROUP_PAD. */
 export function expandGroupToContain(group: ItemRecord, member: ItemRecord): void {
@@ -12,7 +15,7 @@ export function expandGroupToContain(group: ItemRecord, member: ItemRecord): voi
   let gx = group.x, gy = group.y;
   let gRight = group.x + group.w, gBottom = group.y + group.h;
   if (member.x - GROUP_PAD < gx)         gx = member.x - GROUP_PAD;
-  if (member.y - GROUP_PAD < gy)         gy = member.y - GROUP_PAD;
+  if (member.y - GROUP_PAD_TOP < gy)     gy = member.y - GROUP_PAD_TOP;
   if (member.x + mw + GROUP_PAD > gRight)  gRight  = member.x + mw + GROUP_PAD;
   if (member.y + mh + GROUP_PAD > gBottom) gBottom = member.y + mh + GROUP_PAD;
   const nw = gRight - gx, nh = gBottom - gy;
@@ -25,6 +28,30 @@ export function expandGroupToContain(group: ItemRecord, member: ItemRecord): voi
 
 export function getGroupMembers(ctx: Ctx, groupId: number): ItemRecord[] {
   return ctx.items.filter(i => i.groupId === groupId);
+}
+
+/**
+ * Bounds a container group should take to wrap `members` snugly: the usual side
+ * pad on left/right/bottom, plus extra top pad so the label clears the contents.
+ * Returns null when there are no members.
+ */
+export function groupAutoFitBounds(
+  members: ItemRecord[],
+): { x: number; y: number; w: number; h: number } | null {
+  if (members.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const m of members) {
+    const mw = m.w || m.el.offsetWidth || 200;
+    const mh = m.h || m.el.offsetHeight || 200;
+    minX = Math.min(minX, m.x);      minY = Math.min(minY, m.y);
+    maxX = Math.max(maxX, m.x + mw); maxY = Math.max(maxY, m.y + mh);
+  }
+  return {
+    x: minX - GROUP_PAD,
+    y: minY - GROUP_PAD_TOP,
+    w: maxX - minX + GROUP_PAD * 2,
+    h: maxY - minY + GROUP_PAD_TOP + GROUP_PAD,
+  };
 }
 
 /** True if `candidate` is `item`, or nested anywhere inside `item` (a member, member-of-member, ...). */
@@ -169,18 +196,7 @@ export function groupSelectedItems(ctx: Ctx): void {
     return;
   }
 
-  const PAD = 24;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const item of candidates) {
-    const w = item.w || item.el.offsetWidth || 200;
-    const h = item.h || item.el.offsetHeight || 200;
-    minX = Math.min(minX, item.x);     minY = Math.min(minY, item.y);
-    maxX = Math.max(maxX, item.x + w); maxY = Math.max(maxY, item.y + h);
-  }
-
-  const gx = minX - PAD, gy = minY - PAD;
-  const gw = maxX - minX + PAD * 2;
-  const gh = maxY - minY + PAD * 2;
+  const { x: gx, y: gy, w: gw, h: gh } = groupAutoFitBounds(candidates)!;
 
   const memberMinZ = Math.min(...candidates.map(m => parseInt(m.el.style.zIndex) || 0));
   const groupZIndex = Math.max(1, memberMinZ - 1);

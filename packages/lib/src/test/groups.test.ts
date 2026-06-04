@@ -5,7 +5,7 @@ vi.mock('../items.js', () => ({ saveItem: vi.fn(), createItem: vi.fn(), removeIt
 vi.mock('../history.js', () => ({ pushUndo: vi.fn() }));
 vi.mock('../canvas.js', () => ({ toast: vi.fn(), selectItem: vi.fn() }));
 
-import { expandGroupToContain, resolveDropGroup, reparentItems } from '../groups.js';
+import { expandGroupToContain, resolveDropGroup, reparentItems, groupAutoFitBounds } from '../groups.js';
 import { saveItem } from '../items.js';
 
 function rec(
@@ -36,12 +36,38 @@ describe('expandGroupToContain', () => {
     expect(g.el.style.height).toBe((424 - 100) + 'px');
   });
 
+  it('leaves extra top padding (room for the label) when growing upward', () => {
+    const g = rec(1, 'group', 100, 100, 200, 200, 1);
+    const m = rec(2, 'note', 120, 40, 50, 50, 2); // above the group top
+    expandGroupToContain(g, m);
+    // The label is anchored to the group's top edge, so the top grows with a
+    // larger pad than the sides, leaving a gap between the label and contents.
+    expect(40 - g.y).toBeGreaterThan(24);
+  });
+
   it('does nothing when the member already fits inside', () => {
     const g = rec(1, 'group', 0, 0, 400, 400, 1);
     const m = rec(2, 'note', 100, 100, 50, 50, 2);
     expandGroupToContain(g, m);
     expect(g.x).toBe(0); expect(g.y).toBe(0);
     expect(g.w).toBe(400); expect(g.h).toBe(400);
+  });
+});
+
+describe('groupAutoFitBounds', () => {
+  it('wraps members with side pad and extra top pad for the label', () => {
+    const a = rec(1, 'note', 100, 100, 50, 50, 1);
+    const b = rec(2, 'note', 200, 180, 60, 40, 2); // bottom-right extent: 260, 220
+    const bounds = groupAutoFitBounds([a, b])!;
+    expect(bounds.x).toBe(100 - 24);             // left: minX - side pad
+    expect(bounds.x + bounds.w).toBe(260 + 24);  // right: maxX + side pad
+    expect(bounds.y + bounds.h).toBe(220 + 24);  // bottom: maxY + side pad
+    // Top leaves more room than the sides so the label clears the contents.
+    expect(100 - bounds.y).toBeGreaterThan(24);
+  });
+
+  it('returns null when there are no members', () => {
+    expect(groupAutoFitBounds([])).toBeNull();
   });
 });
 
