@@ -4,7 +4,7 @@ import { makePluginAPI, bindPlugin } from './plugin.js';
 import { pushUndo } from './history.js';
 import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateOverviewCache, toast } from './canvas.js';
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
-import { resolveDropGroup, reparentItems, groupAutoFitBounds, type ReparentData } from './groups.js';
+import { resolveDropGroup, reparentItems, groupAutoFitBounds, clampMemberInsideGroup, type ReparentData } from './groups.js';
 
 const GROUP_PAD = 24;
 
@@ -666,8 +666,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
           if (group && !movingItems.has(group)) {
             const iw = item.w || item.el.offsetWidth || 200;
             const ih = item.h || item.el.offsetHeight || 200;
-            nx = Math.max(group.x, Math.min(group.x + group.w - iw, nx));
-            ny = Math.max(group.y, Math.min(group.y + group.h - ih, ny));
+            ({ x: nx, y: ny } = clampMemberInsideGroup(group, nx, ny, iw, ih));
           }
         }
       }

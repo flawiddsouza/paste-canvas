@@ -5,7 +5,7 @@ vi.mock('../items.js', () => ({ saveItem: vi.fn(), createItem: vi.fn(), removeIt
 vi.mock('../history.js', () => ({ pushUndo: vi.fn() }));
 vi.mock('../canvas.js', () => ({ toast: vi.fn(), selectItem: vi.fn() }));
 
-import { expandGroupToContain, resolveDropGroup, reparentItems, groupAutoFitBounds } from '../groups.js';
+import { expandGroupToContain, resolveDropGroup, reparentItems, groupAutoFitBounds, clampMemberInsideGroup } from '../groups.js';
 import { saveItem } from '../items.js';
 
 function rec(
@@ -68,6 +68,23 @@ describe('groupAutoFitBounds', () => {
 
   it('returns null when there are no members', () => {
     expect(groupAutoFitBounds([])).toBeNull();
+  });
+});
+
+describe('clampMemberInsideGroup', () => {
+  it('reserves the top gap for the label so a member cannot slide under it', () => {
+    const g = rec(1, 'group', 0, 0, 400, 400, 1);
+    // Drag a member up past the group's top edge.
+    const { y } = clampMemberInsideGroup(g, 50, -100, 50, 50);
+    // Clamped below the reserved label gap, not flush to the raw top edge (0).
+    expect(y).toBeGreaterThan(0);
+  });
+
+  it('clamps to the left, right and bottom edges', () => {
+    const g = rec(1, 'group', 0, 0, 400, 400, 1);
+    expect(clampMemberInsideGroup(g, -50, 200, 50, 50).x).toBe(0);         // left edge
+    expect(clampMemberInsideGroup(g, 1000, 200, 50, 50).x).toBe(400 - 50); // right edge
+    expect(clampMemberInsideGroup(g, 50, 1000, 50, 50).y).toBe(400 - 50);  // bottom edge
   });
 });
 

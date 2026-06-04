@@ -4,8 +4,9 @@ import { css } from '../style.js';
 const display = (el: Element) => getComputedStyle(el).display;
 
 // Verifies the zoomed-out LOD rule (.pc-surface.overview-lod, applied below 50% zoom):
-// image + group labels stay visible (they identify what you're looking at), while the
-// interactive chrome and edge labels are stripped.
+// image + group labels and the resize handle stay visible (the handle keeps
+// double-click auto-fit / resize reachable when zoomed out), while the toolbar,
+// ports and edge labels are stripped.
 describe('overview-lod visibility (below 50% zoom)', () => {
   let styleEl: HTMLStyleElement;
   let root: HTMLDivElement | null = null;
@@ -44,17 +45,17 @@ describe('overview-lod visibility (below 50% zoom)', () => {
     return { toolbar, port, resize, groupLabel, imgLabel, edgeLabel };
   }
 
-  it('keeps image and group labels visible', () => {
+  it('keeps image and group labels and the resize handle visible', () => {
     const e = build(true);
     expect(display(e.imgLabel)).not.toBe('none');
     expect(display(e.groupLabel)).not.toBe('none');
+    expect(display(e.resize)).not.toBe('none');
   });
 
-  it('hides the interactive chrome and edge labels', () => {
+  it('hides the toolbar, ports and edge labels', () => {
     const e = build(true);
     expect(display(e.toolbar)).toBe('none');
     expect(display(e.port)).toBe('none');
-    expect(display(e.resize)).toBe('none');
     expect(display(e.edgeLabel)).toBe('none');
   });
 

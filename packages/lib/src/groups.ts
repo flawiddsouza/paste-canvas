@@ -54,6 +54,21 @@ export function groupAutoFitBounds(
   };
 }
 
+/**
+ * Clamp a member positioned at (x, y) so it stays inside `group`. The top keeps
+ * the GROUP_PAD_TOP gap reserved for the label, so a dragged member can't slide
+ * up under it; left, right and bottom clamp to the group's edges.
+ */
+export function clampMemberInsideGroup(
+  group: ItemRecord,
+  x: number, y: number, w: number, h: number,
+): { x: number; y: number } {
+  return {
+    x: Math.max(group.x, Math.min(group.x + group.w - w, x)),
+    y: Math.max(group.y + GROUP_PAD_TOP, Math.min(group.y + group.h - h, y)),
+  };
+}
+
 /** True if `candidate` is `item`, or nested anywhere inside `item` (a member, member-of-member, ...). */
 function isSelfOrDescendant(ctx: Ctx, candidate: ItemRecord, item: ItemRecord): boolean {
   let cur: ItemRecord | undefined = candidate;
