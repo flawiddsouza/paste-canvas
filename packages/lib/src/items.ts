@@ -4,6 +4,7 @@ import { makePluginAPI, bindPlugin } from './plugin.js';
 import { pushUndo } from './history.js';
 import { addToSelection, clearSelection, selectItem, viewportCenter, invalidateOverviewCache, toast } from './canvas.js';
 import { removeEdge, snapEdge, restoreEdgeSnap, updateEdgesForItems, startEdgeDrag } from './edges.js';
+import { resolveDropGroup, reparentItems, type ReparentData } from './groups.js';
 
 const GROUP_PAD = 24;
 
@@ -99,6 +100,16 @@ function applyGroupSize(ctx: Ctx, id: number, w: number, h: number): void {
   g.w = w; g.h = h;
   g.el.style.width = w + 'px'; g.el.style.height = h + 'px';
   void saveItem(ctx, g.id);
+}
+
+function applyGroupBounds(ctx: Ctx, id: number, b: { x: number; y: number; w: number; h: number }): void {
+  const g = ctx.itemsById.get(id);
+  if (!g) return;
+  g.x = b.x; g.y = b.y; g.w = b.w; g.h = b.h;
+  g.el.style.left = b.x + 'px'; g.el.style.top = b.y + 'px';
+  g.el.style.width = b.w + 'px'; g.el.style.height = b.h + 'px';
+  g.bound.onResize?.(b.w, b.h);
+  void saveItem(ctx, id);
 }
 
 // ── Create item ───────────────────────────────────────────────────────────────
@@ -570,6 +581,14 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
   let movingItems: Set<ItemRecord>;
   let passengers: ItemRecord[] = [];
   let passengerRelOffsets: Map<ItemRecord, { rx: number; ry: number }>;
+  let highlightEl: HTMLElement | null = null;
+  const setDropHighlight = (g: ItemRecord | null) => {
+    const next = g ? g.el : null;
+    if (next === highlightEl) return;
+    if (highlightEl) highlightEl.classList.remove('drop-target');
+    highlightEl = next;
+    if (highlightEl) highlightEl.classList.add('drop-target');
+  };
 
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -650,7 +669,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
         // Selected item: move by dx/dy, clamp if parent group is stationary
         nx = start.x + dx;
         ny = start.y + dy;
-        if (item.groupId != null) {
+        if (!e.altKey && item.groupId != null) {
           const group = ctx.itemsById.get(item.groupId);
           if (group && !movingItems.has(group)) {
             const iw = item.w || item.el.offsetWidth || 200;
@@ -665,13 +684,32 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
       item.x = nx;
       item.y = ny;
     }
+    if (e.altKey) {
+      setDropHighlight(resolveDropGroup(ctx, cx, cy, ctx.selectedItems));
+    } else {
+      setDropHighlight(null);
+    }
     updateEdgesForItems(ctx, movingItems);
   });
 
-  el.addEventListener('pointerup', () => {
+  el.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
     document.body.classList.remove('paste-canvas-dragging');
+    setDropHighlight(null);
+
+    // Alt-drop: recompute group membership for the directly-dragged items.
+    let reparent: ReparentData | null = null;
+    let dropTarget: ItemRecord | null = null;
+    if (e.altKey) {
+      const vr = ctx.viewport.getBoundingClientRect();
+      const cx = (e.clientX - vr.left - ctx.panX) / ctx.scale;
+      const cy = (e.clientY - vr.top  - ctx.panY) / ctx.scale;
+      dropTarget = resolveDropGroup(ctx, cx, cy, ctx.selectedItems);
+      const data = reparentItems(ctx, [...ctx.selectedItems], dropTarget);
+      reparent = data.changed ? data : null;
+    }
+
     for (const item of startPositions.keys()) void saveItem(ctx, item.id);
     const afterDrag = new Map<number, { x: number; y: number }>();
     let hasMoved = false;
@@ -681,12 +719,13 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
       afterDrag.set(id, { x: r.x, y: r.y });
       if (before.x !== r.x || before.y !== r.y) hasMoved = true;
     }
-    if (hasMoved) {
+    if (hasMoved || reparent) {
       invalidateOverviewCache(ctx);
       const bd = new Map(beforeDrag);
       const ad = new Map(afterDrag);
+      const rp = reparent;
       pushUndo(ctx, {
-        label: 'move',
+        label: rp ? (dropTarget ? 'move into group' : 'move out of group') : 'move',
         undo() {
           for (const [id, pos] of bd) {
             const r = ctx.items.find(i => i.id === id);
@@ -694,6 +733,13 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
             r.x = pos.x; r.y = pos.y;
             r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
             void saveItem(ctx, r.id);
+          }
+          if (rp) {
+            for (const [id, b] of rp.itemsBefore) {
+              const r = ctx.itemsById.get(id);
+              if (r) { r.groupId = b.groupId; r.el.style.zIndex = String(b.z); void saveItem(ctx, r.id); }
+            }
+            for (const [gid, b] of rp.groupBefore) applyGroupBounds(ctx, gid, b);
           }
           updateEdgesForItems(ctx, new Set(ctx.items.filter(i => bd.has(i.id))));
           return [...bd.keys()];
@@ -706,6 +752,13 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
             r.el.style.left = pos.x + 'px'; r.el.style.top = pos.y + 'px';
             void saveItem(ctx, r.id);
           }
+          if (rp) {
+            for (const [id, a] of rp.itemsAfter) {
+              const r = ctx.itemsById.get(id);
+              if (r) { r.groupId = a.groupId; r.el.style.zIndex = String(a.z); void saveItem(ctx, r.id); }
+            }
+            for (const [gid, a] of rp.groupAfter) applyGroupBounds(ctx, gid, a);
+          }
           updateEdgesForItems(ctx, new Set(ctx.items.filter(i => ad.has(i.id))));
           return [...ad.keys()];
         },
@@ -713,7 +766,7 @@ export function makeDraggable(ctx: Ctx, record: ItemRecord): void {
     }
   });
 
-  el.addEventListener('pointercancel', () => { dragging = false; document.body.classList.remove('paste-canvas-dragging'); });
+  el.addEventListener('pointercancel', () => { dragging = false; document.body.classList.remove('paste-canvas-dragging'); setDropHighlight(null); });
 }
 
 // ── Duplicate selected ────────────────────────────────────────────────────────

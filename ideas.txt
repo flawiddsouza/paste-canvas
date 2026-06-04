@@ -2,5 +2,9 @@ Our currently incrementing ids are recipe for conflict if we introduce sync
 
 I think images are also incremented bins?
 
---
+---
+
+edge connection trouble when two items overlap - like if we have a large image and a note inside it 
+
+---
 

@@ -409,6 +409,11 @@ export const css = `
     border-color: #2d6be0;
     border-style: solid;
   }
+  .paste-canvas-root .item-group.drop-target {
+    border-color: #2d6be0;
+    border-style: solid;
+    background: rgba(45, 107, 224, 0.12);
+  }
 
   .paste-canvas-root .group-label {
     position: absolute;
