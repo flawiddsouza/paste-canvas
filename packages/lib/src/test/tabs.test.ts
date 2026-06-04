@@ -23,7 +23,7 @@ vi.mock('../history.js', () => ({
   restoreTabHistory: vi.fn(),
 }));
 
-import { deleteTab, loadTab } from '../tabs.js';
+import { createTab, deleteTab, loadTab } from '../tabs.js';
 
 function makeAdapter(overrides?: Partial<StorageAdapter>): StorageAdapter {
   return {
@@ -43,6 +43,8 @@ function makeAdapter(overrides?: Partial<StorageAdapter>): StorageAdapter {
     deleteViewport: async (_tabId: number) => {},
     saveActiveTab: async (_tabId: number) => {},
     loadActiveTab: async () => null,
+    saveTabLayout: async (_layout) => {},
+    loadTabLayout: async () => null,
     ...overrides,
   };
 }
@@ -58,6 +60,7 @@ function makeCtx(adapter: StorageAdapter): Ctx {
     coordsLabel: {} as HTMLSpanElement,
     tabBar: {} as HTMLDivElement,
     toastEl: {} as HTMLDivElement,
+    root: document.createElement('div'),
     scale: 1,
     panX: 0,
     panY: 0,
@@ -86,6 +89,7 @@ function makeCtx(adapter: StorageAdapter): Ctx {
     itemPlugins: new Map(),
     canvasPlugins: [],
     edgeDropType: 'note',
+    tabLayout: 'topbar',
   };
 }
 
@@ -108,6 +112,73 @@ describe('loadTab', () => {
     expect(getEdgesForTab).toHaveBeenCalledWith(2);
     expect(getAllItems).not.toHaveBeenCalled();
     expect(getAllEdges).not.toHaveBeenCalled();
+  });
+});
+
+/** Stub out the DOM that renderTabBar (called via switchTab) touches. */
+function mockTabBarDom(ctx: Ctx) {
+  const makeEl = () => ({
+    style: {},
+    appendChild: () => {},
+    addEventListener: () => {},
+    remove: () => {},
+    querySelector: () => null,
+  });
+  const originalCreateElement = document.createElement.bind(document);
+  const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string, options?: ElementCreationOptions) => {
+    if (tag === 'div' || tag === 'span' || tag === 'button') {
+      return makeEl() as unknown as HTMLElement;
+    }
+    return originalCreateElement(tag, options);
+  }) as typeof document.createElement);
+  const addBtn = {} as HTMLButtonElement;
+  ctx.tabBar = {
+    querySelectorAll: () => [] as unknown as NodeListOf<Element>,
+    querySelector: () => addBtn,
+    insertBefore: () => addBtn,
+  } as unknown as HTMLDivElement;
+  return spy;
+}
+
+describe('createTab', () => {
+  it('appends a new tab at the end and persists only it', async () => {
+    const putTab = vi.fn();
+    const ctx = makeCtx(makeAdapter({ putTab }));
+    ctx.tabs = [{ id: 1, name: 'A', order: 0 }, { id: 2, name: 'B', order: 1 }];
+    ctx.tabCounter = 2;
+    ctx.currentTabId = 1;
+    const spy = mockTabBarDom(ctx);
+    try {
+      await createTab(ctx, 'New');
+      expect(ctx.tabs.map(t => t.id)).toEqual([1, 2, 3]);
+      expect(ctx.tabs.map(t => t.order)).toEqual([0, 1, 2]);
+      expect(ctx.currentTabId).toBe(3);
+      expect(putTab).toHaveBeenCalledTimes(1);
+      expect(putTab).toHaveBeenCalledWith(expect.objectContaining({ id: 3, order: 2 }));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('prepends a new tab at the start and re-sequences every order', async () => {
+    const putTab = vi.fn();
+    const ctx = makeCtx(makeAdapter({ putTab }));
+    ctx.tabs = [{ id: 1, name: 'A', order: 0 }, { id: 2, name: 'B', order: 1 }];
+    ctx.tabCounter = 2;
+    ctx.currentTabId = 1;
+    const spy = mockTabBarDom(ctx);
+    try {
+      await createTab(ctx, 'New', true);
+      expect(ctx.tabs.map(t => t.id)).toEqual([3, 1, 2]);
+      expect(ctx.tabs.map(t => t.order)).toEqual([0, 1, 2]);
+      expect(ctx.currentTabId).toBe(3);
+      // new tab persisted at the front, and both shifted tabs persisted with new orders
+      expect(putTab).toHaveBeenCalledWith(expect.objectContaining({ id: 3, order: 0 }));
+      expect(putTab).toHaveBeenCalledWith(expect.objectContaining({ id: 1, order: 1 }));
+      expect(putTab).toHaveBeenCalledWith(expect.objectContaining({ id: 2, order: 2 }));
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

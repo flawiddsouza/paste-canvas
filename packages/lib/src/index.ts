@@ -1,5 +1,5 @@
 export { createCanvas, PasteCanvas, defaultPlugins } from './PasteCanvas.js';
-export type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, Side, Plugin } from './types.js';
+export type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, Side, Plugin, TabLayout } from './types.js';
 export type { ItemPlugin, PluginAPI, BoundView, StoredPlugin } from './plugin.js';
 export type { CanvasPlugin, CanvasAPI, ToolbarItem } from './canvas-plugin.js';
 export { PastePriority } from './plugin.js';

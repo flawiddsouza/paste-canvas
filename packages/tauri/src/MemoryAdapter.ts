@@ -1,4 +1,4 @@
-import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
+import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, TabLayout } from '@paste-canvas/lib';
 
 export class MemoryAdapter implements StorageAdapter {
   private items     = new Map<number, ItemData>();
@@ -6,6 +6,7 @@ export class MemoryAdapter implements StorageAdapter {
   private edges     = new Map<number, EdgeData>();
   private viewports = new Map<number, ViewportState>();
   private activeTab: number | null = null;
+  private tabLayout: TabLayout | null = null;
 
   async putItem(item: ItemData): Promise<void>         { this.items.set(item.id, item); }
   async deleteItem(id: number): Promise<void>          { this.items.delete(id); }
@@ -31,4 +32,7 @@ export class MemoryAdapter implements StorageAdapter {
 
   async saveActiveTab(tabId: number): Promise<void>    { this.activeTab = tabId; }
   async loadActiveTab(): Promise<number | null>        { return this.activeTab; }
+
+  async saveTabLayout(layout: TabLayout): Promise<void> { this.tabLayout = layout; }
+  async loadTabLayout(): Promise<TabLayout | null>      { return this.tabLayout; }
 }

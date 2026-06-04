@@ -1,4 +1,4 @@
-import type { Ctx, StorageAdapter, Plugin } from './types.js';
+import type { Ctx, StorageAdapter, Plugin, TabLayout } from './types.js';
 import type { ItemPlugin, StoredPlugin } from './plugin.js';
 import type { CanvasPlugin, CanvasAPI, ToolbarItem } from './canvas-plugin.js';
 import { PastePriority } from './plugin.js';
@@ -11,7 +11,7 @@ import { ImagePlugin } from './plugins/ImagePlugin.js';
 import { GroupPlugin } from './plugins/GroupPlugin.js';
 import { groupSelectedItems } from './groups.js';
 import { snapEdge, restoreEdgeSnap, removeEdge, updateEdgesForItems } from './edges.js';
-import { renderTabBar, restoreAll, createTab } from './tabs.js';
+import { renderTabBar, restoreAll, createTab, setTabLayout } from './tabs.js';
 import { initContextMenu } from './context-menu.js';
 import { isEditableTarget } from './dom.js';
 
@@ -119,6 +119,7 @@ export class PasteCanvas {
         <button class="btn pc-btn-reset-view">Home</button>
         <button class="btn pc-btn-fit">Fit</button>
         <span class="pc-zoom-label">100%</span>
+        <button class="btn pc-btn-layout" title="Toggle sidebar layout"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg></button>
         <button class="btn pc-btn-help">?</button>
       </div>
       <div class="pc-help-modal" hidden>
@@ -156,22 +157,25 @@ export class PasteCanvas {
           </div>
         </div>
       </div>
-      <div class="pc-tab-bar">
-        <button class="pc-add-tab-btn">+</button>
-      </div>
-      <div class="pc-viewport">
-        <span class="pc-coords-label"></span>
-        <div class="pc-surface">
-          <svg class="pc-edge-layer">
-            <defs>
-              <marker id="${arrowheadId}" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-                <polygon points="0 0, 6 2, 0 4" fill="context-stroke"/>
-              </marker>
-            </defs>
-          </svg>
+      <div class="pc-body">
+        <div class="pc-tab-bar">
+          <button class="pc-add-tab-top" title="Add board at start">+</button>
+          <button class="pc-add-tab-btn">+</button>
         </div>
-        <canvas class="pc-overview-canvas"></canvas>
-        <div class="pc-marquee"></div>
+        <div class="pc-viewport">
+          <span class="pc-coords-label"></span>
+          <div class="pc-surface">
+            <svg class="pc-edge-layer">
+              <defs>
+                <marker id="${arrowheadId}" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                  <polygon points="0 0, 6 2, 0 4" fill="context-stroke"/>
+                </marker>
+              </defs>
+            </svg>
+          </div>
+          <canvas class="pc-overview-canvas"></canvas>
+          <div class="pc-marquee"></div>
+        </div>
       </div>
       <div class="pc-toast"></div>
     `;
@@ -191,6 +195,7 @@ export class PasteCanvas {
       coordsLabel: q<HTMLSpanElement>('.pc-coords-label'),
       tabBar:      q<HTMLDivElement>('.pc-tab-bar'),
       toastEl:     q<HTMLDivElement>('.pc-toast'),
+      root:        container,
 
       scale: 1, panX: 0, panY: 0,
 
@@ -212,6 +217,7 @@ export class PasteCanvas {
 
       adapter,
       edgeDropType: opts?.edgeDropType ?? 'note',
+      tabLayout: 'topbar',
     };
 
     this.setupInteraction(container);
@@ -231,7 +237,7 @@ export class PasteCanvas {
   destroy(): void {
     for (const cp of this.ctx.canvasPlugins) cp.onDestroy?.();
     this.abort.abort();
-    this.ctx.surface.closest('.paste-canvas-root')?.remove();
+    this.ctx.root.remove();
   }
 
   // ── Internal setup ────────────────────────────────────────────────────────
@@ -350,6 +356,11 @@ export class PasteCanvas {
       fitItems(ctx, ctx.selectedItems.size > 0 ? [...ctx.selectedItems] : ctx.items);
     }, { signal });
 
+    q('.pc-btn-layout').addEventListener('click', () => {
+      const next: TabLayout = ctx.tabLayout === 'sidebar' ? 'topbar' : 'sidebar';
+      setTabLayout(ctx, next);
+    }, { signal });
+
     const helpModal = q('.pc-help-modal') as HTMLDivElement;
     q('.pc-btn-help').addEventListener('click', () => { helpModal.hidden = false; }, { signal });
     q('.pc-help-close').addEventListener('click', () => { helpModal.hidden = true; }, { signal });
@@ -357,6 +368,8 @@ export class PasteCanvas {
 
     ctx.tabBar.querySelector('.pc-add-tab-btn')!
       .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`), { signal });
+    ctx.tabBar.querySelector('.pc-add-tab-top')!
+      .addEventListener('click', () => void createTab(ctx, `Board ${ctx.tabs.length + 1}`, true), { signal });
   }
 
   private setupPaste(): void {

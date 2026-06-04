@@ -34,6 +34,8 @@ function makeMockAdapter(initial?: {
     deleteViewport: async (tabId) => { viewports.delete(tabId); },
     saveActiveTab: async () => {},
     loadActiveTab: async () => null,
+    saveTabLayout: async () => {},
+    loadTabLayout: async () => null,
   };
 }
 

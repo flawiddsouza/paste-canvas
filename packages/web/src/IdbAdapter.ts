@@ -1,4 +1,4 @@
-import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
+import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, TabLayout } from '@paste-canvas/lib';
 
 const DB_NAME    = 'paste-canvas';
 const DB_VERSION = 5;
@@ -173,5 +173,14 @@ export class IdbAdapter implements StorageAdapter {
   async loadActiveTab(): Promise<number | null> {
     const row = await get<{ key: string; tabId: number }>(await this.db, 'meta', 'activeTab');
     return row?.tabId ?? null;
+  }
+
+  async saveTabLayout(layout: TabLayout): Promise<void> {
+    put(await this.db, 'meta', { key: 'tabLayout', layout });
+  }
+
+  async loadTabLayout(): Promise<TabLayout | null> {
+    const row = await get<{ key: string; layout: TabLayout }>(await this.db, 'meta', 'tabLayout');
+    return row?.layout ?? null;
   }
 }

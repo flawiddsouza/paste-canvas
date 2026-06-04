@@ -1,5 +1,5 @@
 import { createCanvas } from '@paste-canvas/lib';
-import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
+import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, TabLayout } from '@paste-canvas/lib';
 
 // ── In-memory adapter ────────────────────────────────────────────────────────
 
@@ -9,6 +9,7 @@ class MemoryAdapter implements StorageAdapter {
   private edges     = new Map<number, EdgeData>();
   private viewports = new Map<string, ViewportState>();
   private activeTab: number | null = null;
+  private tabLayout: TabLayout | null = null;
 
   async putItem(item: ItemData)    { this.items.set(item.id, item); }
   async deleteItem(id: number)     { this.items.delete(id); }
@@ -33,6 +34,8 @@ class MemoryAdapter implements StorageAdapter {
   async deleteViewport(tabId: number) { this.viewports.delete(`vp-${tabId}`); }
   async saveActiveTab(tabId: number) { this.activeTab = tabId; }
   async loadActiveTab()              { return this.activeTab; }
+  async saveTabLayout(layout: TabLayout) { this.tabLayout = layout; }
+  async loadTabLayout()                  { return this.tabLayout; }
 }
 
 // ── Image generation ─────────────────────────────────────────────────────────

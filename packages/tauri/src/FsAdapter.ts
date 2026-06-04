@@ -1,4 +1,4 @@
-import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState } from '@paste-canvas/lib';
+import type { StorageAdapter, ItemData, TabData, EdgeData, ViewportState, TabLayout } from '@paste-canvas/lib';
 import {
   readTextFile, writeTextFile,
   readFile, writeFile,
@@ -11,6 +11,7 @@ interface WorkspaceFile {
   version: 1;
   tabs: TabData[];
   activeTabId: number | null;
+  tabLayout?: TabLayout;
 }
 
 type ItemRecord = Omit<ItemData, 'binaryData'>;
@@ -31,6 +32,7 @@ export class FsAdapter implements StorageAdapter {
   private items     = new Map<number, ItemRecord>();
   private viewports: ViewportFile = {};
   private activeTabId: number | null = null;
+  private tabLayout: TabLayout | null = null;
 
   private constructor(
     private readonly folder: string,
@@ -64,6 +66,7 @@ export class FsAdapter implements StorageAdapter {
     if (await exists(wsPath)) {
       const ws: WorkspaceFile = JSON.parse(await readTextFile(wsPath));
       a.activeTabId = ws.activeTabId;
+      a.tabLayout = ws.tabLayout ?? null;
       for (const tab of ws.tabs) a.tabs.set(tab.id, tab);
     } else {
       await writeTextFile(wsPath, JSON.stringify({ version: 1, tabs: [], activeTabId: null }, null, 2));
@@ -94,6 +97,7 @@ export class FsAdapter implements StorageAdapter {
       version: 1,
       tabs: [...this.tabs.values()],
       activeTabId: this.activeTabId,
+      tabLayout: this.tabLayout ?? undefined,
     };
     await writeTextFile(this.wsPath(), JSON.stringify(ws, null, 2));
   }
@@ -247,5 +251,15 @@ export class FsAdapter implements StorageAdapter {
 
   async loadActiveTab(): Promise<number | null> {
     return this.activeTabId;
+  }
+
+  async saveTabLayout(layout: TabLayout): Promise<void> {
+    this.tabLayout = layout;
+    await this.flushWorkspace();
+    this.onNavSave();
+  }
+
+  async loadTabLayout(): Promise<TabLayout | null> {
+    return this.tabLayout;
   }
 }

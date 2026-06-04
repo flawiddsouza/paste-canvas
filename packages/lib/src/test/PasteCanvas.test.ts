@@ -60,6 +60,7 @@ vi.mock('../tabs.js', () => ({
     ctx.edgeCounter = 3;
   }),
   createTab: vi.fn(),
+  setTabLayout: vi.fn(),
 }));
 
 vi.mock('../context-menu.js', () => ({
@@ -89,6 +90,8 @@ function makeAdapter(overrides?: Partial<StorageAdapter>): StorageAdapter {
     deleteViewport: async (_tabId: number) => {},
     saveActiveTab: async (_tabId: number) => {},
     loadActiveTab: async () => null,
+    saveTabLayout: async (_layout) => {},
+    loadTabLayout: async () => null,
     ...overrides,
   };
 }

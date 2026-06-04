@@ -9,3 +9,5 @@ packages/tauri/src-tauri/gen/
 # Test artifacts
 packages/lib/.vitest-attachments
 packages/lib/src/test/__screenshots__
+
+.superpowers/

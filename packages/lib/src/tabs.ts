@@ -1,4 +1,4 @@
-import type { Ctx, EdgeRecord } from './types.js';
+import type { Ctx, EdgeRecord, TabLayout } from './types.js';
 import { applyTransform, saveViewport, updateCulling, invalidateOverviewCache, toast, showConfirm } from './canvas.js';
 import { renderEdge } from './edges.js';
 import { createItem } from './items.js';
@@ -81,11 +81,99 @@ export async function loadTab(ctx: Ctx, tabId: number): Promise<void> {
   updateCulling(ctx);
 }
 
+// ── Layout (top bar <-> sidebar) ──────────────────────────────────────────────
+
+/** Apply a layout to the DOM + ctx without persisting (used on initial load). */
+function applyTabLayout(ctx: Ctx, layout: TabLayout): void {
+  ctx.tabLayout = layout;
+  ctx.root.classList.toggle('layout-sidebar', layout === 'sidebar');
+}
+
+/** Switch layout in response to a user action and persist the choice. */
+export function setTabLayout(ctx: Ctx, layout: TabLayout): void {
+  applyTabLayout(ctx, layout);
+  void ctx.adapter.saveTabLayout(layout);
+}
+
+// ── Reorder tabs ──────────────────────────────────────────────────────────────
+
+/**
+ * Move the tab at `fromIndex` to `toIndex` (index in the array AFTER removal),
+ * reassign every tab's `order` to its new position, and persist the ones that
+ * changed. Does not re-render - the caller renders after.
+ */
+export function moveTab(ctx: Ctx, fromIndex: number, toIndex: number): void {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+  if (fromIndex >= ctx.tabs.length || toIndex >= ctx.tabs.length) return;
+  const [moved] = ctx.tabs.splice(fromIndex, 1);
+  ctx.tabs.splice(toIndex, 0, moved);
+  ctx.tabs.forEach((tab, i) => {
+    if (tab.order !== i) { tab.order = i; void ctx.adapter.putTab(tab); }
+  });
+}
+
 // ── Render tab bar ────────────────────────────────────────────────────────────
 
 export function renderTabBar(ctx: Ctx): void {
   ctx.tabBar.querySelectorAll('.tab').forEach(el => el.remove());
   const addBtn = ctx.tabBar.querySelector('.pc-add-tab-btn')!;
+  let justDragged = false;
+
+  const attachTabDrag = (tabEl: HTMLElement, tab: { id: number }) => {
+    tabEl.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      if (target.closest('.tab-close')) return;                 // delete button
+      if (tabEl.querySelector<HTMLElement>('.tab-name')?.isContentEditable) return; // renaming
+
+      justDragged = false;
+      const startX = e.clientX, startY = e.clientY;
+      const startIndex = ctx.tabs.findIndex(t => t.id === tab.id);
+      let dragging = false;
+      let targetIndex = startIndex;
+
+      const onMove = (ev: PointerEvent) => {
+        if (!dragging) {
+          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+          dragging = true;
+          tabEl.classList.add('dragging');
+        }
+        ev.preventDefault(); // suppress text selection while dragging
+        const vertical = ctx.tabLayout === 'sidebar';
+        const others = [...ctx.tabBar.querySelectorAll<HTMLElement>('.tab')].filter(el => el !== tabEl);
+        let idx = 0;
+        for (const el of others) {
+          const r = el.getBoundingClientRect();
+          const mid = vertical ? r.top + r.height / 2 : r.left + r.width / 2;
+          const pos = vertical ? ev.clientY : ev.clientX;
+          if (pos > mid) idx++;
+        }
+        targetIndex = idx;
+        // Live feedback: move the dragged element among its siblings.
+        ctx.tabBar.insertBefore(tabEl, others[targetIndex] ?? addBtn);
+      };
+
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (!dragging) return;
+        tabEl.classList.remove('dragging');
+        justDragged = true;            // swallow the trailing click
+        if (targetIndex !== startIndex) {
+          moveTab(ctx, startIndex, targetIndex);
+          renderTabBar(ctx);           // rebuild from canonical order
+        } else {
+          renderTabBar(ctx);           // restore DOM position after the live move
+        }
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+  };
+
   for (const tab of ctx.tabs) {
     const tabEl = document.createElement('div');
     tabEl.className = 'tab' + (tab.id === ctx.currentTabId ? ' active' : '');
@@ -121,8 +209,10 @@ export function renderTabBar(ctx: Ctx): void {
 
     tabEl.addEventListener('click', () => {
       if (nameSpan.isContentEditable) return;
+      if (justDragged) { justDragged = false; return; }
       void switchTab(ctx, tab.id);
     });
+    attachTabDrag(tabEl, tab);
     tabEl.appendChild(nameSpan);
 
     const closeBtn = document.createElement('button');
@@ -174,11 +264,14 @@ export async function switchTab(ctx: Ctx, tabId: number): Promise<void> {
   restoreTabHistory(ctx, tabId);
 }
 
-export async function createTab(ctx: Ctx, name: string): Promise<void> {
+export async function createTab(ctx: Ctx, name: string, atStart = false): Promise<void> {
   const id = ++ctx.tabCounter;
-  const tab = { id, name, order: ctx.tabs.length };
-  ctx.tabs.push(tab);
-  ctx.adapter.putTab(tab);
+  const tab = { id, name, order: atStart ? 0 : ctx.tabs.length };
+  if (atStart) ctx.tabs.unshift(tab); else ctx.tabs.push(tab);
+  // Re-sequence orders to match array positions; persist the new tab plus any that shifted.
+  ctx.tabs.forEach((t, i) => {
+    if (t.order !== i || t === tab) { t.order = i; ctx.adapter.putTab(t); }
+  });
   await switchTab(ctx, id);
 }
 
@@ -228,6 +321,8 @@ export async function restoreAll(ctx: Ctx): Promise<void> {
   const activeTabId = await ctx.adapter.loadActiveTab();
   ctx.currentTabId = activeTabId ?? ctx.tabs[0].id;
   if (!ctx.tabs.find(t => t.id === ctx.currentTabId)) ctx.currentTabId = ctx.tabs[0].id;
+
+  applyTabLayout(ctx, (await ctx.adapter.loadTabLayout()) ?? 'topbar');
 
   renderTabBar(ctx);
   await loadTab(ctx, ctx.currentTabId);

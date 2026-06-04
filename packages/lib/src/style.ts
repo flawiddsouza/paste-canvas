@@ -13,6 +13,16 @@ export const css = `
     box-sizing: border-box;
   }
 
+  /* ── Body (tab bar + viewport) ── */
+  .paste-canvas-root .pc-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .paste-canvas-root.layout-sidebar .pc-body { flex-direction: row; }
+
   body.paste-canvas-dragging, body.paste-canvas-dragging * { cursor: grabbing !important; }
 
   /* ── Toolbar ── */
@@ -302,7 +312,15 @@ export const css = `
     border-bottom: 1px solid #333;
     flex-shrink: 0;
     overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
   }
+  .paste-canvas-root .pc-tab-bar::-webkit-scrollbar { height: 6px; width: 6px; }
+  .paste-canvas-root .pc-tab-bar::-webkit-scrollbar-track { background: transparent; }
+  .paste-canvas-root .pc-tab-bar::-webkit-scrollbar-thumb {
+    background: #444; border-radius: 3px;
+  }
+  .paste-canvas-root .pc-tab-bar::-webkit-scrollbar-thumb:hover { background: #555; }
   .paste-canvas-root .tab {
     display: flex;
     align-items: center;
@@ -334,6 +352,62 @@ export const css = `
     margin-left: 4px;
   }
   .paste-canvas-root .pc-add-tab-btn:hover { background: #333; color: #ccc; }
+
+  /* ── Sidebar layout overrides ── */
+  .paste-canvas-root.layout-sidebar .pc-tab-bar {
+    flex-direction: column;
+    align-items: stretch;
+    width: 220px;
+    flex-shrink: 0;
+    padding: 8px;
+    gap: 7px;
+    border-bottom: none;
+    border-right: 1px solid #333;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .paste-canvas-root.layout-sidebar .tab {
+    width: 100%;
+    justify-content: space-between;
+    align-items: flex-start;
+    border: 1px solid #444;
+    border-radius: 5px;
+    white-space: normal;
+  }
+  .paste-canvas-root.layout-sidebar .tab-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .paste-canvas-root.layout-sidebar .tab.active { border-color: #555; }
+  .paste-canvas-root.layout-sidebar .pc-add-tab-btn {
+    width: 100%;
+    margin-left: 0;
+  }
+  /* "Add at start" button: prepends a board (left in top-bar, top in sidebar). */
+  .paste-canvas-root .pc-add-tab-top {
+    padding: 2px 9px;
+    background: none;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #888;
+    cursor: pointer;
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-right: 4px;
+  }
+  .paste-canvas-root .pc-add-tab-top:hover { background: #333; color: #ccc; }
+  .paste-canvas-root.layout-sidebar .pc-add-tab-top { width: 100%; margin-right: 0; }
+
+  /* ── Layout toggle button ── */
+  .paste-canvas-root .pc-btn-layout { display: inline-flex; align-items: center; }
+  .paste-canvas-root .pc-btn-layout svg { display: block; }
+  .paste-canvas-root.layout-sidebar .pc-btn-layout {
+    background: #33485c; border-color: #4a6580; color: #e6edf3;
+  }
+
+  /* ── Tab drag feedback ── */
+  .paste-canvas-root .tab.dragging { opacity: 0.5; }
 
   /* ── Port dots ── */
   .paste-canvas-root .port {

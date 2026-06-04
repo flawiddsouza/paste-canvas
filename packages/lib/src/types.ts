@@ -41,6 +41,8 @@ export interface ViewportState {
   scale: number;
 }
 
+export type TabLayout = 'topbar' | 'sidebar';
+
 // ── Runtime records (hold live DOM references) ──────────────────────────────
 
 export interface ItemRecord {
@@ -120,6 +122,10 @@ export interface StorageAdapter {
   deleteViewport(tabId: number): Promise<void>;
   saveActiveTab(tabId: number): Promise<void>;
   loadActiveTab(): Promise<number | null>;
+
+  // Tab layout (UI preference)
+  saveTabLayout(layout: TabLayout): Promise<void>;
+  loadTabLayout(): Promise<TabLayout | null>;
 }
 
 // ── Shared context (owned by PasteCanvas, passed to all sub-module fns) ─────
@@ -135,6 +141,7 @@ export interface Ctx {
   coordsLabel: HTMLSpanElement;
   tabBar: HTMLDivElement;
   toastEl: HTMLDivElement;
+  root: HTMLElement;
 
   // Transform state
   scale: number;
@@ -182,4 +189,7 @@ export interface Ctx {
 
   // Config
   edgeDropType: string;
+
+  // UI preferences
+  tabLayout: TabLayout;
 }
