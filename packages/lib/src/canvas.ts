@@ -376,6 +376,28 @@ export function invalidateOverviewCache(ctx: Ctx): void {
   overviewCache.delete(ctx.overviewCanvas);
 }
 
+// Coalesce bursts of refresh requests (e.g. many images decoding at once) into
+// one rebuild per frame.
+const overviewRefreshScheduled = new WeakMap<Ctx, boolean>();
+
+/**
+ * Drop the cached overview tile and, when zoomed out far enough to be showing it,
+ * rebuild + redraw it. Called when an item's appearance changes outside the normal
+ * add/move/delete paths — notably when an image finishes decoding while the canvas
+ * is in overview mode (the item isn't mounted, so the tile was drawn with a grey
+ * placeholder and would otherwise stay grey until the next invalidation).
+ */
+export function refreshOverview(ctx: Ctx): void {
+  invalidateOverviewCache(ctx);
+  if (ctx.scale >= OVERVIEW_SCALE) return; // not showing the tile — next zoom-out rebuilds it
+  if (overviewRefreshScheduled.get(ctx)) return;
+  overviewRefreshScheduled.set(ctx, true);
+  requestAnimationFrame(() => {
+    overviewRefreshScheduled.delete(ctx);
+    if (ctx.scale < OVERVIEW_SCALE) updateCulling(ctx);
+  });
+}
+
 export function updateCulling(ctx: Ctx): void {
   if (!ctx.items.length) {
     ctx.surface.classList.remove('overview-lod');

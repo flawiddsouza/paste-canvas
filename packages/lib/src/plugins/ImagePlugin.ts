@@ -72,6 +72,9 @@ function buildDom(api: PluginAPI): ImageView {
   // After image decodes, update rec.h so ports/edges reflect real dimensions
   img.addEventListener('load', () => {
     api.notifyResized();
+    // Redraw the zoomed-out overview tile: if the canvas was below OVERVIEW_SCALE
+    // when this item loaded, the tile was baked with a grey placeholder for it.
+    api.refreshOverview();
     api.save();
   }, { signal: api.signal });
 

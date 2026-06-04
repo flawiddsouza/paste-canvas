@@ -12,6 +12,7 @@ function makeApi(itemEl: HTMLElement): PluginAPI {
     pushUndo: () => {},
     save: () => {},
     notifyResized: () => {},
+    refreshOverview: () => {},
     toast: () => {},
     confirm: async () => false,
   };

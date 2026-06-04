@@ -1,7 +1,7 @@
 import type { Ctx, UndoCmd } from './types.js';
 import { pushUndo } from './history.js';
 import { updateEdgesForItems } from './edges.js';
-import { toast, showConfirm } from './canvas.js';
+import { toast, showConfirm, refreshOverview } from './canvas.js';
 // saveItem imported from './items.js' — circular reference resolves at runtime in ES modules
 import { saveItem } from './items.js';
 
@@ -39,6 +39,8 @@ export interface PluginAPI {
                                          // user-drag resize is handled entirely by the core
                                          // implementation: reads rec.el dimensions, updates rec.w/h,
                                          // recalculates connected edges via nodeEdgeMap
+  refreshOverview(): void;               // appearance changed off the add/move/delete paths (e.g. an
+                                         // image finished decoding) — rebuild the zoomed-out overview tile
   toast(msg: string): void;
   confirm(msg: string, confirmLabel?: string): Promise<boolean>;
 }
@@ -258,6 +260,7 @@ export function makePluginAPI(
       rec.h = rec.el.offsetHeight;
       updateEdgesForItems(ctx, new Set([rec]));
     },
+    refreshOverview()   { refreshOverview(ctx); },
     toast(msg)          { toast(ctx, msg); },
     confirm(msg, label) { return showConfirm(ctx, msg, label); },
   };
